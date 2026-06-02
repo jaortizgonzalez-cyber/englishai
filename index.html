@@ -352,7 +352,7 @@ let chatHistory = [
 
 // Inicialización de Reconocimiento de Voz
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const recognition = new Recognition();
+const recognition = new SpeechRecognition();
 recognition.interimResults = false; 
 recognition.continuous = false;    
 
