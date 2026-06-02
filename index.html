@@ -296,4 +296,99 @@
             speech.pitch = 1;
             
             const voices = window.speechSynthesis.getVoices();
-            const englishVoice = voices.find
+            const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
+            if (englishVoice) speech.voice = englishVoice;
+
+            speech.onend = () => {
+                isBotTalking = false; 
+                if (isConversationActive) {
+                    setTimeout(() => { startListening(); }, 400); 
+                }
+            };
+
+            window.speechSynthesis.speak(speech);
+        }
+
+        window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+
+        // 3. ENVÍO DE MENSAJES A AZURE
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text) return;
+
+            if (!API_KEY) {
+                appendMessage("Error: No se ha configurado una API Key.", 'bot');
+                return;
+            }
+
+            appendMessage(text, 'user');
+            userInput.value = '';
+            chatHistory.push({ role: "user", content: text });
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'api-key': API_KEY 
+                    },
+                    body: JSON.stringify({ 
+                        model: DEPLOYMENT_NAME, 
+                        messages: chatHistory,
+                        store: true 
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error("Detalle del rechazo de Azure:", errorData);
+                    
+                    if (response.status === 401 || response.status === 403) {
+                        localStorage.removeItem('azure_tutor_key');
+                        API_KEY = null;
+                        appendMessage("API Key incorrecta. Recarga la página para ingresarla de nuevo.", 'bot');
+                    } else {
+                        appendMessage(`Azure Error: ${errorData.error?.message || "Error de formato."}`, 'bot');
+                    }
+                    stopConversation();
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (data.choices && data.choices[0] && data.choices[0].message) {
+                    const botReply = data.choices[0].message.content;
+                    appendMessage(botReply, 'bot');
+                    speakEnglish(botReply); 
+                    chatHistory.push({ role: "assistant", content: botReply });
+                }
+
+            } catch (error) {
+                console.error("Error crítico:", error);
+                appendMessage("Connection issue. Conversation stopped.", 'bot');
+                stopConversation();
+            }
+        }
+
+        function appendMessage(text, sender) {
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('message', sender);
+            msgDiv.innerHTML = `<div class="text">${text}</div>`;
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight; 
+        }
+
+        sendBtn.addEventListener('click', () => {
+            sendMessage();
+            if (isConversationActive) recognition.abort(); 
+        });
+
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+                if (isConversationActive) recognition.abort();
+            }
+        });
+    </script>
+</body>
+</html>
