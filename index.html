@@ -43,6 +43,7 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            position: relative;
         }
 
         header {
@@ -54,6 +55,27 @@
 
         header h2 { font-size: 1.2rem; margin-bottom: 5px; }
         header p { font-size: 0.85rem; opacity: 0.8; }
+
+        /* Contenedor de configuración de API Key integrado en la UI */
+        .key-panel {
+            background-color: #EEF2FF;
+            padding: 10px 15px;
+            border-bottom: 1px solid #E0E7FF;
+            display: none; /* Se controla con JS */
+            gap: 10px;
+            align-items: center;
+        }
+
+        .key-panel.active { display: flex; }
+
+        .key-panel input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #C7D2FE;
+            border-radius: 8px;
+            outline: none;
+            font-size: 0.85rem;
+        }
 
         .chat-box {
             flex: 1;
@@ -150,58 +172,81 @@
             <h2>🇬🇧 English Tutor</h2>
             <p>Habla en inglés o pide ayuda en español</p>
         </header>
+
+        <div class="key-panel" id="key-panel">
+            <input type="password" id="key-input" placeholder="Ingresa tu Azure API Key...">
+            <button id="save-key-btn" class="icon-btn primary" title="Guardar Llave"><i class="fas fa-save"></i></button>
+        </div>
         
         <div class="chat-box" id="chat-box">
             <div class="message bot">
-                <div class="text">Hello! I'm your English tutor. What would you like to talk about today?</div>
+                <div class="text">Hello! I'm your English tutor. Please ensure your Azure API Key is configured by clicking the key icon below. What would you like to talk about today?</div>
             </div>
         </div>
 
         <div class="input-area">
+            <button id="toggle-key-btn" class="icon-btn" title="Configurar API Key"><i class="fas fa-key"></i></button>
             <select id="lang-select" title="Idioma del Micrófono">
-                <option value="en-US">Mic: English</option>
-                <option value="es-ES">Mic: Español</option>
+                <option value="en-US">Mic: EN</option>
+                <option value="es-ES">Mic: ES</option>
             </select>
             <input type="text" id="user-input" placeholder="Type or speak...">
-            <button id="mic-btn" class="icon-btn" title="Hablar"><i class="fas fa-microphone"></i></button>
+            <button id="mic-btn" class="icon-btn" title="Hablar / Pausar"><i class="fas fa-microphone"></i></button>
             <button id="send-btn" class="icon-btn primary" title="Enviar"><i class="fas fa-paper-plane"></i></button>
         </div>
     </div>
 
     <script>
         // =========================================================================
-        // CONFIGURACIÓN DE CREDENCIALES (Nativa de Azure AI Foundry Hub)
+        // CONFIGURACIÓN DE ENDPOINTS (Azure AI Foundry)
         // =========================================================================
         const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
         const DEPLOYMENT_NAME = 'gpt-4.1'; 
         const API_URL = AZURE_BASE_URL + '/chat/completions';
 
-        let API_KEY = localStorage.getItem('azure_tutor_key');
-
-        // Función segura para solicitar la llave si no existe
-        function checkApiKey() {
-            if (!API_KEY) {
-                const userKey = prompt("Por favor, ingresa tu API Key de Azure AI Foundry para comenzar:");
-                if (userKey && userKey.trim().length > 0) {
-                    API_KEY = userKey.trim();
-                    localStorage.setItem('azure_tutor_key', API_KEY);
-                } else {
-                    alert("Se requiere la API Key para interactuar con el agente.");
-                }
-            }
-        }
-
-        // Ejecutar la comprobación al cargar la página
-        window.addEventListener('DOMContentLoaded', checkApiKey);
-
+        // Elementos del DOM
         const chatBox = document.getElementById('chat-box');
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
         const micBtn = document.getElementById('mic-btn');
         const langSelect = document.getElementById('lang-select');
+        
+        // Elementos del nuevo panel de credenciales
+        const keyPanel = document.getElementById('key-panel');
+        const keyInput = document.getElementById('key-input');
+        const saveKeyBtn = document.getElementById('save-key-btn');
+        const toggleKeyBtn = document.getElementById('toggle-key-btn');
 
         let isConversationActive = false; 
         let isBotTalking = false; 
+
+        // Recuperar llave si ya existe en el navegador
+        let API_KEY = localStorage.getItem('azure_tutor_key');
+        if (API_KEY) {
+            keyInput.value = API_KEY;
+        } else {
+            // Si está vacía, le mostramos sutilmente el panel para que la ponga
+            keyPanel.classList.add('active');
+        }
+
+        // Acciones para abrir/cerrar y guardar la llave en UI
+        toggleKeyBtn.addEventListener('click', () => {
+            keyPanel.classList.toggle('active');
+        });
+
+        saveKeyBtn.addEventListener('click', () => {
+            const val = keyInput.value.trim();
+            if (val) {
+                API_KEY = val;
+                localStorage.setItem('azure_tutor_key', API_KEY);
+                keyPanel.classList.remove('active');
+                appendMessage("🔑 System: API Key guardada correctamente de forma local.", 'bot');
+            } else {
+                localStorage.removeItem('azure_tutor_key');
+                API_KEY = null;
+                alert("Llave eliminada.");
+            }
+        });
 
         let chatHistory = [
             {
@@ -221,8 +266,11 @@
         recognition.continuous = false; 
 
         micBtn.addEventListener('click', () => {
-            checkApiKey(); // Asegura que haya llave antes de encender el micro
-            if (!API_KEY) return;
+            if (!API_KEY) {
+                keyPanel.classList.add('active');
+                alert("Por favor, guarda primero tu API Key usando el panel superior.");
+                return;
+            }
 
             if (!isConversationActive) {
                 isConversationActive = true;
@@ -282,10 +330,7 @@
             isBotTalking = true; 
             micBtn.classList.remove('recording');
             
-            try {
-                recognition.abort(); 
-            } catch(e) {}
-            
+            try { recognition.abort(); } catch(e) {}
             window.speechSynthesis.cancel();
             
             const speech = new SpeechSynthesisUtterance();
@@ -311,15 +356,10 @@
 
         window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 
-        // 3. ENVÍO DE MENSAJES A AZURE
+        // 3. ENVÍO DE MENSAJES A AZURE FOUNDRY
         async function sendMessage() {
             const text = userInput.value.trim();
             if (!text) return;
-
-            if (!API_KEY) {
-                appendMessage("Error: No se ha configurado una API Key.", 'bot');
-                return;
-            }
 
             appendMessage(text, 'user');
             userInput.value = '';
@@ -346,9 +386,10 @@
                     if (response.status === 401 || response.status === 403) {
                         localStorage.removeItem('azure_tutor_key');
                         API_KEY = null;
-                        appendMessage("API Key incorrecta. Recarga la página para ingresarla de nuevo.", 'bot');
+                        keyPanel.classList.add('active');
+                        appendMessage("API Key incorrecta. Ingresa una llave válida en el panel superior.", 'bot');
                     } else {
-                        appendMessage(`Azure Error: ${errorData.error?.message || "Error de formato."}`, 'bot');
+                        appendMessage(`Azure Error: ${errorData.error?.message || "Error en la solicitud."}`, 'bot');
                     }
                     stopConversation();
                     return;
@@ -364,7 +405,7 @@
                 }
 
             } catch (error) {
-                console.error("Error crítico:", error);
+                console.error("Error crítico de ejecución:", error);
                 appendMessage("Connection issue. Conversation stopped.", 'bot');
                 stopConversation();
             }
