@@ -278,270 +278,315 @@
     </div>
 
     <script>
-        // Envolvemos toda la ejecución en window.onload para asegurar que el DOM exista al 100%
-        window.onload = function() {
+        // =========================================================================
+// CONFIGURACIÓN DE ENDPOINTS (Azure AI Foundry)
+// =========================================================================
+const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
+const DEPLOYMENT_NAME = 'gpt-4.1'; 
+const API_URL = AZURE_BASE_URL + '/chat/completions';
+
+// Elementos del DOM mapeados de forma segura
+const orbeAgent = document.getElementById('orbe-agent');
+const statusText = document.getElementById('status-text');
+const realtimeText = document.getElementById('realtime-text');
+const activationBtn = document.getElementById('activation-btn');
+const langSelect = document.getElementById('lang-select');
+
+const keyPanel = document.getElementById('key-panel');
+const keyInput = document.getElementById('key-input');
+const saveKeyBtn = document.getElementById('save-key-btn');
+const toggleKeyBtn = document.getElementById('toggle-key-btn');
+
+let isConversationActive = false; 
+let isBotTalking = false; 
+let silenceTimer = null; 
+let accumulatedText = ""; 
+const SILENCE_TIMEOUT = 3000; 
+
+// Carga inteligente de API Key corporativa
+let API_KEY = localStorage.getItem('azure_tutor_key');
+if (API_KEY) {
+    keyInput.value = API_KEY;
+    if(realtimeText) realtimeText.innerText = "Sincronizado de forma segura. Presiona el micrófono.";
+} else {
+    if(keyPanel) keyPanel.classList.add('active');
+}
+
+if(toggleKeyBtn) {
+    toggleKeyBtn.addEventListener('click', () => keyPanel.classList.toggle('active'));
+}
+
+if(saveKeyBtn) {
+    saveKeyBtn.addEventListener('click', () => {
+        const val = keyInput.value.trim();
+        if (val) {
+            API_KEY = val;
+            localStorage.setItem('azure_tutor_key', API_KEY);
+            keyPanel.classList.remove('active');
+            realtimeText.innerText = "🔑 Conexión establecida. Listo para operar.";
+        } else {
+            localStorage.removeItem('azure_tutor_key');
+            API_KEY = null;
+            realtimeText.innerText = "API Key eliminada.";
+        }
+    });
+}
+
+let chatHistory = [
+    {
+        role: "system",
+        content: "You are an empathetic, friendly, and conversational English tutor. Your main goal is to help me practice my spoken English. Rules: 1. ALWAYS reply in natural and clear English. 2. If I talk or ask something in Spanish because I am stuck or don't know how to say it, kindly translate it or show me the correct way to say it in English, and then continue our conversation in English. 3. Keep your answers short, conversational, and easy to read. 4. CRITICAL: Try to avoid complex markdown formatting like excessive bold asterisks or special code blocks in your answers, keep it like regular spoken dialogue."
+    },
+    {
+        role: "assistant",
+        content: "Hello! I am your English tutor, and I'm very excited to help you practice. Don't worry if you need to use Spanish sometimes, I will help you out. What would you like to talk about today?"
+    }
+];
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = new SpeechRecognition();
+recognition.interimResults = false; 
+recognition.continuous = false;    
+
+if(activationBtn) {
+    activationBtn.addEventListener('click', () => {
+        if (!API_KEY) {
+            keyPanel.classList.add('active');
+            alert("Ingresa y guarda tu API Key para poder activar al agente.");
+            return;
+        }
+
+        if (!isConversationActive) {
+            isConversationActive = true;
+            activationBtn.classList.add('active');
+            accumulatedText = "";
+            startListening();
+        } else {
+            stopConversation();
+        }
+    });
+}
+
+function changeVisualState(state) {
+    if (!orbeAgent || !statusText) return;
+    orbeAgent.classList.remove('listening', 'thinking', 'speaking');
+    
+    if (state === 'listening') {
+        orbeAgent.classList.add('listening');
+        statusText.innerText = "Escuchando...";
+        statusText.style.color = "#EC4899";
+    } else if (state === 'thinking') {
+        orbeAgent.classList.add('thinking');
+        statusText.innerText = "Procesando...";
+        statusText.style.color = "#22D3EE";
+    } else if (state === 'speaking') {
+        orbeAgent.classList.add('speaking');
+        statusText.innerText = "Hablando...";
+        statusText.style.color = "#A855F7";
+    } else {
+        statusText.innerText = "En Línea / Esperando";
+        statusText.style.color = "#94A3B8";
+    }
+}
+
+function startListening() {
+    if (!isConversationActive || window.speechSynthesis.speaking || isBotTalking) return;
+    try {
+        recognition.lang = langSelect.value; 
+        recognition.start();
+        changeVisualState('listening');
+    } catch (e) {
+        console.log("Re-enganchando hardware de micrófono...");
+    }
+}
+
+function stopConversation() {
+    isConversationActive = false;
+    isBotTalking = false;
+    clearTimeout(silenceTimer);
+    accumulatedText = "";
+    if(activationBtn) activationBtn.classList.remove('active');
+    try { recognition.abort(); } catch(e) {}
+    window.speechSynthesis.cancel();
+    changeVisualState('idle');
+    if(realtimeText) realtimeText.innerText = "Sistema en pausa.";
+}
+
+recognition.onresult = (event) => {
+    clearTimeout(silenceTimer);
+    const resultText = event.results[0][0].transcript.trim();
+    
+    if (resultText.length > 0) {
+        accumulatedText += (accumulatedText ? " " : "") + resultText;
+        if(realtimeText) realtimeText.innerText = `"${accumulatedText}"`; 
+    }
+
+    silenceTimer = setTimeout(() => {
+        if (isConversationActive && !isBotTalking && accumulatedText.trim().length > 0) {
+            executeSend();
+        }
+    }, SILENCE_TIMEOUT);
+};
+
+recognition.onend = () => {
+    if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
+        startListening();
+        if (accumulatedText.trim().length > 0 && !silenceTimer) {
+            silenceTimer = setTimeout(() => {
+                if (isConversationActive && !isBotTalking) {
+                    executeSend();
+                }
+            }, SILENCE_TIMEOUT);
+        }
+    }
+};
+
+recognition.onerror = (event) => {
+    if (event.error === 'aborted') return;
+    if (event.error === 'no-speech' && isConversationActive) {
+        startListening();
+    }
+};
+
+// =========================================================================
+// SÍNTESIS DE VOZ CON ILUMINACIÓN DE PALABRAS EN TIEMPO REAL (KARAOKE EFFECT)
+// =========================================================================
+function speakEnglish(text) {
+    isBotTalking = true; 
+    clearTimeout(silenceTimer);
+    changeVisualState('speaking');
+    
+    try { recognition.abort(); } catch(e) {}
+    window.speechSynthesis.cancel();
+    
+    // 1. Limpieza estricta de marcas Markdown para que el motor de voz no se confunda
+    let cleanText = text
+        .replace(/\*\*/g, '')  
+        .replace(/\*/g, '')    
+        .replace(/#/g, '')     
+        .replace(/`/g, '')     
+        .replace(/-\s+/g, ''); 
+
+    // 2. Preparamos el contenedor visual: Dividimos el texto en palabras indexadas
+    const wordsArray = cleanText.split(/\s+/);
+    realtimeText.innerHTML = wordsArray.map((word, index) => {
+        return `<span id="word-${index}" style="transition: all 0.15s ease; color: #475569; opacity: 0.5;">${word}</span>`;
+    }).join(' ');
+
+    const speech = new SpeechSynthesisUtterance();
+    speech.text = cleanText; 
+    speech.lang = 'en-US'; 
+    speech.volume = 1;
+    speech.rate = 0.95; 
+    
+    const voices = window.speechSynthesis.getVoices();
+    const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
+    if (englishVoice) speech.voice = englishVoice;
+
+    // VARIABLE AUXILIAR: Rastrea el índice de la palabra actual
+    let wordIndex = 0;
+
+    // 3. EVENTO DE BORDES CRÍTICO: Se ejecuta de forma síncrona cada vez que la voz dice una palabra
+    speech.onboundary = (event) => {
+        if (event.name === 'word') {
+            // Apagamos el resaltado neón de la palabra anterior si existía, dejándola visible de forma tenue
+            if (wordIndex > 0) {
+                const prevWord = document.getElementById(`word-${wordIndex - 1}`);
+                if (prevWord) {
+                    prevWord.style.color = "#94A3B8"; // Color de lectura normal
+                    prevWord.style.opacity = "0.7";
+                    prevWord.style.textShadow = "none";
+                }
+            }
+
+            // Iluminamos con un brillo de energía cian la palabra actual que está saliendo por el parlante
+            const currentWord = document.getElementById(`word-${wordIndex}`);
+            if (currentWord) {
+                currentWord.style.color = "#22D3EE"; // Cian brillante de tu paleta neón
+                currentWord.style.opacity = "1";
+                currentWord.style.textShadow = "0 0 12px #22D3EE, 0 0 4px #22D3EE";
+                currentWord.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
             
-            const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
-            const DEPLOYMENT_NAME = 'gpt-4.1'; 
-            const API_URL = AZURE_BASE_URL + '/chat/completions';
+            wordIndex++;
+        }
+    };
 
-            // Elementos del DOM mapeados de forma segura
-            const orbeAgent = document.getElementById('orbe-agent');
-            const statusText = document.getElementById('status-text');
-            const realtimeText = document.getElementById('realtime-text');
-            const activationBtn = document.getElementById('activation-btn');
-            const langSelect = document.getElementById('lang-select');
-            
-            const keyPanel = document.getElementById('key-panel');
-            const keyInput = document.getElementById('key-input');
-            const saveKeyBtn = document.getElementById('save-key-btn');
-            const toggleKeyBtn = document.getElementById('toggle-key-btn');
+    speech.onend = () => {
+        // Al terminar, iluminamos todo el bloque completo para que el estudiante pueda repasar la frase entera
+        const allSpans = realtimeText.querySelectorAll('span');
+        allSpans.forEach(span => {
+            span.style.color = "#E2E8F0";
+            span.style.opacity = "1";
+            span.style.textShadow = "none";
+        });
 
-            let isConversationActive = false; 
-            let isBotTalking = false; 
-            let silenceTimer = null; 
-            let accumulatedText = ""; 
-            const SILENCE_TIMEOUT = 3000; 
+        isBotTalking = false; 
+        if (isConversationActive) {
+            changeVisualState('listening');
+            setTimeout(() => { startListening(); }, 400); 
+        } else {
+            changeVisualState('idle');
+        }
+    };
 
-            // Carga inteligente de API Key corporativa
-            let API_KEY = localStorage.getItem('azure_tutor_key');
-            if (API_KEY) {
-                keyInput.value = API_KEY;
-                if(realtimeText) realtimeText.innerText = "Sincronizado de forma segura. Presiona el micrófono.";
-            } else {
-                if(keyPanel) keyPanel.classList.add('active');
-            }
+    window.speechSynthesis.speak(speech);
+}
 
-            if(toggleKeyBtn) {
-                toggleKeyBtn.addEventListener('click', () => keyPanel.classList.toggle('active'));
-            }
+window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 
-            if(saveKeyBtn) {
-                saveKeyBtn.addEventListener('click', () => {
-                    const val = keyInput.value.trim();
-                    if (val) {
-                        API_KEY = val;
-                        localStorage.setItem('azure_tutor_key', API_KEY);
-                        keyPanel.classList.remove('active');
-                        realtimeText.innerText = "🔑 Conexión establecida. Listo para operar.";
-                    } else {
-                        localStorage.removeItem('azure_tutor_key');
-                        API_KEY = null;
-                        realtimeText.innerText = "API Key eliminada.";
-                    }
-                });
-            }
+function executeSend() {
+    changeVisualState('thinking');
+    try { recognition.abort(); } catch(e) {}
+    sendMessage();
+}
 
-            let chatHistory = [
-                {
-                    role: "system",
-                    content: "You are an empathetic, friendly, and conversational English tutor. Your main goal is to help me practice my spoken English. Rules: 1. ALWAYS reply in natural and clear English. 2. If I talk or ask something in Spanish because I am stuck or don't know how to say it, kindly translate it or show me the correct way to say it in English, and then continue our conversation in English. 3. Keep your answers short, conversational, and easy to read. 4. CRITICAL: Try to avoid complex markdown formatting like excessive bold asterisks or special code blocks in your answers, keep it like regular spoken dialogue."
-                },
-                {
-                    role: "assistant",
-                    content: "Hello! I am your English tutor, and I'm very excited to help you practice. Don't worry if you need to use Spanish sometimes, I will help you out. What would you like to talk about today?"
-                }
-            ];
+async function sendMessage() {
+    const text = accumulatedText.trim();
+    if (!text) return;
 
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
-            recognition.interimResults = false; 
-            recognition.continuous = false;    
+    accumulatedText = ""; 
+    clearTimeout(silenceTimer);
+    silenceTimer = null;
 
-            if(activationBtn) {
-                activationBtn.addEventListener('click', () => {
-                    if (!API_KEY) {
-                        keyPanel.classList.add('active');
-                        alert("Ingresa y guarda tu API Key para poder activar al agente.");
-                        return;
-                    }
+    chatHistory.push({ role: "user", content: text });
 
-                    if (!isConversationActive) {
-                        isConversationActive = true;
-                        activationBtn.classList.add('active');
-                        accumulatedText = "";
-                        startListening();
-                    } else {
-                        stopConversation();
-                    }
-                });
-            }
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'api-key': API_KEY 
+            },
+            body: JSON.stringify({ 
+                model: DEPLOYMENT_NAME, 
+                messages: chatHistory,
+                store: true 
+            })
+        });
 
-            function changeVisualState(state) {
-                if (!orbeAgent || !statusText) return;
-                orbeAgent.classList.remove('listening', 'thinking', 'speaking');
-                
-                if (state === 'listening') {
-                    orbeAgent.classList.add('listening');
-                    statusText.innerText = "Escuchando...";
-                    statusText.style.color = "#EC4899";
-                } else if (state === 'thinking') {
-                    orbeAgent.classList.add('thinking');
-                    statusText.innerText = "Procesando...";
-                    statusText.style.color = "#22D3EE";
-                } else if (state === 'speaking') {
-                    orbeAgent.classList.add('speaking');
-                    statusText.innerText = "Hablando...";
-                    statusText.style.color = "#A855F7";
-                } else {
-                    statusText.innerText = "En Línea / Esperando";
-                    statusText.style.color = "#94A3B8";
-                }
-            }
+        if (!response.ok) {
+            const errorData = await response.json();
+            if(realtimeText) realtimeText.innerText = `Error: ${errorData.error?.message || "Rechazo corporativo."}`;
+            stopConversation();
+            return;
+        }
 
-            function startListening() {
-                if (!isConversationActive || window.speechSynthesis.speaking || isBotTalking) return;
-                try {
-                    recognition.lang = langSelect.value; 
-                    recognition.start();
-                    changeVisualState('listening');
-                } catch (e) {
-                    console.log("Re-enganchando hardware de micrófono...");
-                }
-            }
+        const data = await response.json();
 
-            function stopConversation() {
-                isConversationActive = false;
-                isBotTalking = false;
-                clearTimeout(silenceTimer);
-                accumulatedText = "";
-                if(activationBtn) activationBtn.classList.remove('active');
-                try { recognition.abort(); } catch(e) {}
-                window.speechSynthesis.cancel();
-                changeVisualState('idle');
-                if(realtimeText) realtimeText.innerText = "Sistema en pausa.";
-            }
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            const botReply = data.choices[0].message.content;
+            // Pasamos la respuesta directa a la función Speak, que ahora maneja el renderizado dinámico palabra por palabra
+            speakEnglish(botReply); 
+            chatHistory.push({ role: "assistant", content: botReply });
+        }
 
-            recognition.onresult = (event) => {
-                clearTimeout(silenceTimer);
-                const resultText = event.results[0][0].transcript.trim();
-                
-                if (resultText.length > 0) {
-                    accumulatedText += (accumulatedText ? " " : "") + resultText;
-                    if(realtimeText) realtimeText.innerText = `"${accumulatedText}"`; 
-                }
-
-                silenceTimer = setTimeout(() => {
-                    if (isConversationActive && !isBotTalking && accumulatedText.trim().length > 0) {
-                        executeSend();
-                    }
-                }, SILENCE_TIMEOUT);
-            };
-
-            recognition.onend = () => {
-                if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
-                    startListening();
-                    if (accumulatedText.trim().length > 0 && !silenceTimer) {
-                        silenceTimer = setTimeout(() => {
-                            if (isConversationActive && !isBotTalking) {
-                                executeSend();
-                            }
-                        }, SILENCE_TIMEOUT);
-                    }
-                }
-            };
-
-            recognition.onerror = (event) => {
-                if (event.error === 'aborted') return;
-                if (event.error === 'no-speech' && isConversationActive) {
-                    startListening();
-                }
-            };
-
-            function speakEnglish(text) {
-                isBotTalking = true; 
-                clearTimeout(silenceTimer);
-                changeVisualState('speaking');
-                
-                try { recognition.abort(); } catch(e) {}
-                window.speechSynthesis.cancel();
-                
-                // Filtro purificador de asteriscos y Markdown para la voz
-                let cleanText = text
-                    .replace(/\*\*/g, '')  
-                    .replace(/\*/g, '')    
-                    .replace(/#/g, '')     
-                    .replace(/`/g, '')     
-                    .replace(/-\s+/g, ''); 
-
-                const speech = new SpeechSynthesisUtterance();
-                speech.text = cleanText; 
-                speech.lang = 'en-US'; 
-                speech.volume = 1;
-                speech.rate = 0.95; 
-                
-                const voices = window.speechSynthesis.getVoices();
-                const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
-                if (englishVoice) speech.voice = englishVoice;
-
-                speech.onend = () => {
-                    isBotTalking = false; 
-                    if (isConversationActive) {
-                        changeVisualState('listening');
-                        setTimeout(() => { startListening(); }, 400); 
-                    } else {
-                        changeVisualState('idle');
-                    }
-                };
-
-                window.speechSynthesis.speak(speech);
-            }
-
-            window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
-
-            function executeSend() {
-                changeVisualState('thinking');
-                try { recognition.abort(); } catch(e) {}
-                sendMessage();
-            }
-
-            async function sendMessage() {
-                const text = accumulatedText.trim();
-                if (!text) return;
-
-                accumulatedText = ""; 
-                clearTimeout(silenceTimer);
-                silenceTimer = null;
-
-                chatHistory.push({ role: "user", content: text });
-
-                try {
-                    const response = await fetch(API_URL, {
-                        method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'api-key': API_KEY 
-                        },
-                        body: JSON.stringify({ 
-                            model: DEPLOYMENT_NAME, 
-                            messages: chatHistory,
-                            store: true 
-                        })
-                    });
-
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        if(realtimeText) realtimeText.innerText = `Error: ${errorData.error?.message || "Rechazo corporativo."}`;
-                        stopConversation();
-                        return;
-                    }
-
-                    const data = await response.json();
-
-                    if (data.choices && data.choices[0] && data.choices[0].message) {
-                        const botReply = data.choices[0].message.content;
-                        if(realtimeText) realtimeText.innerText = botReply; 
-                        speakEnglish(botReply); 
-                        chatHistory.push({ role: "assistant", content: botReply });
-                    }
-
-                } catch (error) {
-                    console.error(error);
-                    if(realtimeText) realtimeText.innerText = "Fallo crítico de conexión externa.";
-                    stopConversation();
-                }
-            }
-        };
+    } catch (error) {
+        console.error(error);
+        if(realtimeText) realtimeText.innerText = "Fallo crítico de conexión externa.";
+        stopConversation();
+    }
+}
     </script>
 </body>
 </html>
