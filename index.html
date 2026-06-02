@@ -5,6 +5,7 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Multivac Voice Agent</title>
+    <!-- Iconos de FontAwesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
     <style>
@@ -284,7 +285,7 @@
     </div>
 
     <script>
-        // Envolvemos la inicialización para garantizar que los elementos de UI existan al 100%
+        // TODO encapsulado dentro de window.onload para que el navegador NO falle buscando elementos
         window.onload = function() {
             
             const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
@@ -309,88 +310,69 @@
             let accumulatedText = ""; 
             const SILENCE_TIMEOUT = 3000; 
 
-            // Carga inteligente de API Key corporativa
-            let API_KEY = localStorage.getItem('azure_tutor_key');
-            if (API_KEY) {
-                keyInput.value = API_KEY;
-                if(realtimeText) realtimeText.innerText = "Sincronizado de forma segura. Presiona el micrófono.";
-            } else {
-                if(keyPanel) keyPanel.classList.add('active');
-            }
-
-            if(toggleKeyBtn) {
-                toggleKeyBtn.addEventListener('click', () => keyPanel.classList.toggle('active'));
-            }
-
-            if(saveKeyBtn) {
-                saveKeyBtn.addEventListener('click', () => {
-                    const val = keyInput.value.trim();
-                    if (val) {
-                        API_KEY = val;
-                        localStorage.setItem('azure_tutor_key', API_KEY);
-                        keyPanel.classList.remove('active');
-                        realtimeText.innerText = "🔑 Conexión establecida. Listo para operar.";
-                    } else {
-                        localStorage.removeItem('azure_tutor_key');
-                        API_KEY = null;
-                        realtimeText.innerText = "API Key eliminada.";
-                    }
-                });
-            }
-
-            let chatHistory = [
-                {
-                    role: "system",
-                    content: "You are an empathetic, friendly, and conversational English tutor. Your main goal is to help me practice my spoken English. Rules: 1. ALWAYS reply in natural and clear English. 2. If I talk or ask something in Spanish because I am stuck or don't know how to say it, kindly translate it or show me the correct way to say it in English, and then continue our conversation in English. 3. Keep your answers short, conversational, and easy to read. 4. CRITICAL: Try to avoid complex markdown formatting like excessive bold asterisks or special code blocks in your answers, keep it like regular spoken dialogue."
-                },
-                {
-                    role: "assistant",
-                    content: "Hello! I am your English tutor, and I'm very excited to help you practice. Don't worry if you need to use Spanish sometimes, I will help you out. What would you like to talk about today?"
-                }
-            ];
-
-            // CORRECCIÓN CLAVE: Uso estricto del objeto SpeechRecognition nativo
+            // Instancia segura y síncrona del reconocimiento de voz nativo
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             const recognition = new SpeechRecognition();
             recognition.interimResults = false; 
             recognition.continuous = false;    
 
-            if(activationBtn) {
-                activationBtn.addEventListener('click', () => {
-                    if (!API_KEY) {
-                        keyPanel.classList.add('active');
-                        alert("Ingresa y guarda tu API Key para poder activar al agente.");
-                        return;
-                    }
-
-                    if (!isConversationActive) {
-                        isConversationActive = true;
-                        activationBtn.classList.add('active');
-                        accumulatedText = "";
-                        
-                        // Desbloqueo forzado de hardware multimedia para iOS / Android
-                        try {
-                            window.speechSynthesis.cancel();
-                            const unlockSpeech = new SpeechSynthesisUtterance('Starting Multivac');
-                            unlockSpeech.volume = 0.01; 
-                            unlockSpeech.rate = 1;
-                            unlockSpeech.lang = 'en-US';
-                            window.speechSynthesis.speak(unlockSpeech);
-                            console.log("Canal multimedia inicializado correctamente.");
-                        } catch(e) {
-                            console.error("Fallo preventivo de pre-activación:", e);
-                        }
-
-                        // Margen de tolerancia asíncrona de 300ms para móviles
-                        setTimeout(() => {
-                            if (isConversationActive) startListening();
-                        }, 300);
-
-                    } else {
-                        stopConversation();
-                    }
-                });
+            // Cambiar textos de estado iniciales
+            if (statusText) {
+                statusText.innerText = "En Línea / Esperando";
+                statusText.style.color = "#94A3B8";
             }
+
+            // Sistema de llave local
+            let API_KEY = localStorage.getItem('azure_tutor_key');
+            if (API_KEY) {
+                keyInput.value = API_KEY;
+                realtimeText.innerText = "Sincronizado correctamente. Presiona el micrófono para iniciar.";
+            } else {
+                keyPanel.classList.add('active');
+            }
+
+            toggleKeyBtn.addEventListener('click', () => keyPanel.classList.toggle('active'));
+
+            saveKeyBtn.addEventListener('click', () => {
+                const val = keyInput.value.trim();
+                if (val) {
+                    API_KEY = val;
+                    localStorage.setItem('azure_tutor_key', API_KEY);
+                    keyPanel.classList.remove('active');
+                    realtimeText.innerText = "🔑 Conexión establecida. Listo para operar.";
+                } else {
+                    localStorage.removeItem('azure_tutor_key');
+                    API_KEY = null;
+                    realtimeText.innerText = "API Key eliminada.";
+                }
+            });
+
+            // CONTROLADOR DEL BOTÓN PRINCIPAL
+            activationBtn.addEventListener('click', () => {
+                if (!API_KEY) {
+                    keyPanel.classList.add('active');
+                    alert("Por favor guarda tu API Key primero.");
+                    return;
+                }
+
+                if (!isConversationActive) {
+                    isConversationActive = true;
+                    activationBtn.classList.add('active');
+                    accumulatedText = "";
+
+                    // Desbloqueo acústico instantáneo para móviles
+                    try {
+                        window.speechSynthesis.cancel();
+                        const unlock = new SpeechSynthesisUtterance(' ');
+                        unlock.volume = 0;
+                        window.speechSynthesis.speak(unlock);
+                    } catch(e) {}
+
+                    startListening();
+                } else {
+                    stopConversation();
+                }
+            });
 
             function changeVisualState(state) {
                 if (!orbeAgent || !statusText) return;
@@ -421,7 +403,7 @@
                     recognition.start();
                     changeVisualState('listening');
                 } catch (e) {
-                    console.log("Re-enganchando buffers del micrófono...");
+                    console.log("Error al abrir micro:", e);
                 }
             }
 
@@ -431,11 +413,11 @@
                 clearTimeout(silenceTimer);
                 clearInterval(karaokeTimer);
                 accumulatedText = "";
-                if(activationBtn) activationBtn.classList.remove('active');
+                activationBtn.classList.remove('active');
                 try { recognition.abort(); } catch(e) {}
                 window.speechSynthesis.cancel();
                 changeVisualState('idle');
-                if(realtimeText) realtimeText.innerText = "Sistema en pausa.";
+                realtimeText.innerText = "Agente en pausa.";
             }
 
             recognition.onresult = (event) => {
@@ -444,7 +426,7 @@
                 
                 if (resultText.length > 0) {
                     accumulatedText += (accumulatedText ? " " : "") + resultText;
-                    if(realtimeText) realtimeText.innerText = `"${accumulatedText}"`; 
+                    realtimeText.innerText = `"${accumulatedText}"`; 
                 }
 
                 silenceTimer = setTimeout(() => {
@@ -456,26 +438,17 @@
 
             recognition.onend = () => {
                 if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
-                    setTimeout(() => { startListening(); }, 200);
-                    
-                    if (accumulatedText.trim().length > 0 && !silenceTimer) {
-                        silenceTimer = setTimeout(() => {
-                            if (isConversationActive && !isBotTalking) {
-                                executeSend();
-                            }
-                        }, SILENCE_TIMEOUT);
-                    }
+                    setTimeout(() => { startListening(); }, 250);
                 }
             };
 
             recognition.onerror = (event) => {
                 if (event.error === 'aborted') return;
                 if (event.error === 'no-speech' && isConversationActive) {
-                    setTimeout(() => { startListening(); }, 200);
+                    setTimeout(() => { startListening(); }, 250);
                 }
             };
 
-            // Síntesis de voz con simulación virtual de teleprompter por software
             function speakEnglish(text) {
                 isBotTalking = true; 
                 clearTimeout(silenceTimer);
@@ -510,7 +483,7 @@
                 if (englishVoice) speech.voice = englishVoice;
 
                 let currentWordIndex = 0;
-                const MS_PER_WORD = 390; 
+                const MS_PER_WORD = 395; 
 
                 speech.onstart = () => {
                     clearInterval(karaokeTimer);
@@ -536,7 +509,6 @@
                             currentEl.style.opacity = "1";
                             currentEl.style.textShadow = "0 0 12px #22D3EE, 0 0 4px #22D3EE";
                             currentEl.style.transform = "scale(1.08)";
-                            currentEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                         }
 
                         currentWordIndex++;
@@ -556,9 +528,7 @@
                     isBotTalking = false; 
                     if (isConversationActive) {
                         changeVisualState('listening');
-                        setTimeout(() => { startListening(); }, 500); 
-                    } else {
-                        changeVisualState('idle');
+                        setTimeout(() => { startListening(); }, 400); 
                     }
                 };
 
@@ -599,7 +569,7 @@
 
                     if (!response.ok) {
                         const errorData = await response.json();
-                        if(realtimeText) realtimeText.innerText = `Error: ${errorData.error?.message || "Rechazo corporativo."}`;
+                        realtimeText.innerText = `Error: ${errorData.error?.message || "Error de conexión."}`;
                         stopConversation();
                         return;
                     }
@@ -614,7 +584,7 @@
 
                 } catch (error) {
                     console.error(error);
-                    if(realtimeText) realtimeText.innerText = "Fallo crítico de conexión externa.";
+                    realtimeText.innerText = "Fallo de red.";
                     stopConversation();
                 }
             }
