@@ -198,238 +198,253 @@
 
     <script>
         // =========================================================================
-        // CONFIGURACIÓN DE ENDPOINTS (Azure AI Foundry)
-        // =========================================================================
-        const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
-        const DEPLOYMENT_NAME = 'gpt-4.1'; 
-        const API_URL = AZURE_BASE_URL + '/chat/completions';
+// CONFIGURACIÓN DE ENDPOINTS (Azure AI Foundry)
+// =========================================================================
+const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
+const DEPLOYMENT_NAME = 'gpt-4.1'; 
+const API_URL = AZURE_BASE_URL + '/chat/completions';
 
-        // Elementos del DOM
-        const chatBox = document.getElementById('chat-box');
-        const userInput = document.getElementById('user-input');
-        const sendBtn = document.getElementById('send-btn');
-        const micBtn = document.getElementById('mic-btn');
-        const langSelect = document.getElementById('lang-select');
-        
-        // Elementos del nuevo panel de credenciales
-        const keyPanel = document.getElementById('key-panel');
-        const keyInput = document.getElementById('key-input');
-        const saveKeyBtn = document.getElementById('save-key-btn');
-        const toggleKeyBtn = document.getElementById('toggle-key-btn');
+// Elementos del DOM
+const chatBox = document.getElementById('chat-box');
+const userInput = document.getElementById('user-input');
+const sendBtn = document.getElementById('send-btn');
+const micBtn = document.getElementById('mic-btn');
+const langSelect = document.getElementById('lang-select');
 
-        let isConversationActive = false; 
-        let isBotTalking = false; 
+// Elementos del panel de credenciales
+const keyPanel = document.getElementById('key-panel');
+const keyInput = document.getElementById('key-input');
+const saveKeyBtn = document.getElementById('save-key-btn');
+const toggleKeyBtn = document.getElementById('toggle-key-btn');
 
-        // Recuperar llave si ya existe en el navegador
-        let API_KEY = localStorage.getItem('azure_tutor_key');
-        if (API_KEY) {
-            keyInput.value = API_KEY;
-        } else {
-            // Si está vacía, le mostramos sutilmente el panel para que la ponga
-            keyPanel.classList.add('active');
-        }
+// Estados de control de flujo conversacional
+let isConversationActive = false; 
+let isBotTalking = false; 
+let silenceTimer = null; 
+const SILENCE_TIMEOUT = 2500; // Tiempo de espera en milisegundos (2.5 segundos de silencio total)
 
-        // Acciones para abrir/cerrar y guardar la llave en UI
-        toggleKeyBtn.addEventListener('click', () => {
-            keyPanel.classList.toggle('active');
-        });
+// Recuperar llave local si existe
+let API_KEY = localStorage.getItem('azure_tutor_key');
+if (API_KEY) {
+    keyInput.value = API_KEY;
+} else {
+    keyPanel.classList.add('active');
+}
 
-        saveKeyBtn.addEventListener('click', () => {
-            const val = keyInput.value.trim();
-            if (val) {
-                API_KEY = val;
-                localStorage.setItem('azure_tutor_key', API_KEY);
-                keyPanel.classList.remove('active');
-                appendMessage("🔑 System: API Key guardada correctamente de forma local.", 'bot');
-            } else {
-                localStorage.removeItem('azure_tutor_key');
-                API_KEY = null;
-                alert("Llave eliminada.");
-            }
-        });
+// Acciones para la llave
+toggleKeyBtn.addEventListener('click', () => {
+    keyPanel.classList.toggle('active');
+});
 
-        let chatHistory = [
-            {
-                role: "system",
-                content: "You are an empathetic, friendly, and conversational English tutor. Your main goal is to help me practice my spoken English. Rules: 1. ALWAYS reply in natural and clear English. 2. If I talk or ask something in Spanish because I am stuck or don't know how to say it, kindly translate it or show me the correct way to say it in English, and then continue our conversation in English. 3. Keep your answers short, conversational, and easy to read."
-            },
-            {
-                role: "assistant",
-                content: "Hello! I am your English tutor, and I'm very excited to help you practice. Don't worry if you need to use Spanish sometimes, I will help you out. What would you like to talk about today?"
-            }
-        ];
+saveKeyBtn.addEventListener('click', () => {
+    const val = keyInput.value.trim();
+    if (val) {
+        API_KEY = val;
+        localStorage.setItem('azure_tutor_key', API_KEY);
+        keyPanel.classList.remove('active');
+        appendMessage("🔑 System: API Key guardada correctamente de forma local.", 'bot');
+    } else {
+        localStorage.removeItem('azure_tutor_key');
+        API_KEY = null;
+        alert("Llave eliminada.");
+    }
+});
 
-        // 1. RECONOCIMIENTO DE VOZ (Speech-to-Text)
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
-        recognition.interimResults = false;
-        recognition.continuous = false; 
+let chatHistory = [
+    {
+        role: "system",
+        content: "You are an empathetic, friendly, and conversational English tutor. Your main goal is to help me practice my spoken English. Rules: 1. ALWAYS reply in natural and clear English. 2. If I talk or ask something in Spanish because I am stuck or don't know how to say it, kindly translate it or show me the correct way to say it in English, and then continue our conversation in English. 3. Keep your answers short, conversational, and easy to read."
+    },
+    {
+        role: "assistant",
+        content: "Hello! I am your English tutor, and I'm very excited to help you practice. Don't worry if you need to use Spanish sometimes, I will help you out. What would you like to talk about today?"
+    }
+];
 
-        micBtn.addEventListener('click', () => {
-            if (!API_KEY) {
-                keyPanel.classList.add('active');
-                alert("Por favor, guarda primero tu API Key usando el panel superior.");
-                return;
-            }
+// 1. RECONOCIMIENTO DE VOZ CON INTELIGENCIA DE TIEMPOS DE SILENCIO
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = new SpeechRecognition();
+recognition.interimResults = true; 
+recognition.continuous = true;     // Impide que el navegador corte por su cuenta al pausar
 
-            if (!isConversationActive) {
-                isConversationActive = true;
-                startListening();
-            } else {
-                stopConversation();
-            }
-        });
+micBtn.addEventListener('click', () => {
+    if (!API_KEY) {
+        keyPanel.classList.add('active');
+        alert("Por favor, guarda primero tu API Key.");
+        return;
+    }
 
-        function startListening() {
-            if (!isConversationActive || window.speechSynthesis.speaking || isBotTalking) return;
-            
-            try {
-                recognition.lang = langSelect.value; 
-                recognition.start();
-                micBtn.classList.add('recording');
-            } catch (e) {
-                console.log("Esperando liberación de hardware...");
-            }
-        }
+    if (!isConversationActive) {
+        isConversationActive = true;
+        startListening();
+    } else {
+        stopConversation();
+    }
+});
 
-        function stopConversation() {
-            isConversationActive = false;
-            isBotTalking = false;
-            recognition.abort();
-            window.speechSynthesis.cancel();
-            micBtn.classList.remove('recording');
-        }
+function startListening() {
+    if (!isConversationActive || window.speechSynthesis.speaking || isBotTalking) return;
+    
+    try {
+        userInput.value = ''; 
+        recognition.lang = langSelect.value; 
+        recognition.start();
+        micBtn.classList.add('recording');
+    } catch (e) {
+        console.log("Reconocimiento de voz ya en ejecución o liberando recursos...");
+    }
+}
 
-        recognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript;
-            userInput.value = transcript;
-            sendMessage(); 
-        };
+function stopConversation() {
+    isConversationActive = false;
+    isBotTalking = false;
+    clearTimeout(silenceTimer);
+    try { recognition.abort(); } catch(e) {}
+    window.speechSynthesis.cancel();
+    micBtn.classList.remove('recording');
+}
 
-        recognition.onend = () => {
-            if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
-                setTimeout(() => { startListening(); }, 300);
-            }
-        };
+// CAPTURA FLUIDA EN TIEMPO REAL
+recognition.onresult = (event) => {
+    // Cada vez que el usuario emite un sonido o habla, destruimos el temporizador de silencio anterior
+    clearTimeout(silenceTimer);
 
-        recognition.onerror = (event) => {
-            if (event.error === 'aborted') {
-                console.log("Escucha pausada correctamente para dar paso al tutor.");
-                return; 
-            }
-            console.error("Error en reconocimiento de voz:", event.error);
-            if (event.error === 'no-speech' && isConversationActive) {
-                startListening();
-            } else {
-                micBtn.classList.remove('recording');
-            }
-        };
+    let currentTranscript = '';
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+        currentTranscript += event.results[i][0].transcript;
+    }
+    
+    userInput.value = currentTranscript;
 
-        // 2. SÍNTESIS DE VOZ (Text-to-Speech)
-        function speakEnglish(text) {
-            isBotTalking = true; 
-            micBtn.classList.remove('recording');
-            
-            try { recognition.abort(); } catch(e) {}
-            window.speechSynthesis.cancel();
-            
-            const speech = new SpeechSynthesisUtterance();
-            speech.text = text;
-            speech.lang = 'en-US'; 
-            speech.volume = 1;
-            speech.rate = 0.95; 
-            speech.pitch = 1;
-            
-            const voices = window.speechSynthesis.getVoices();
-            const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
-            if (englishVoice) speech.voice = englishVoice;
-
-            speech.onend = () => {
-                isBotTalking = false; 
-                if (isConversationActive) {
-                    setTimeout(() => { startListening(); }, 400); 
-                }
-            };
-
-            window.speechSynthesis.speak(speech);
-        }
-
-        window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
-
-        // 3. ENVÍO DE MENSAJES A AZURE FOUNDRY
-        async function sendMessage() {
-            const text = userInput.value.trim();
-            if (!text) return;
-
-            appendMessage(text, 'user');
-            userInput.value = '';
-            chatHistory.push({ role: "user", content: text });
-
-            try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'api-key': API_KEY 
-                    },
-                    body: JSON.stringify({ 
-                        model: DEPLOYMENT_NAME, 
-                        messages: chatHistory,
-                        store: true 
-                    })
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    console.error("Detalle del rechazo de Azure:", errorData);
-                    
-                    if (response.status === 401 || response.status === 403) {
-                        localStorage.removeItem('azure_tutor_key');
-                        API_KEY = null;
-                        keyPanel.classList.add('active');
-                        appendMessage("API Key incorrecta. Ingresa una llave válida en el panel superior.", 'bot');
-                    } else {
-                        appendMessage(`Azure Error: ${errorData.error?.message || "Error en la solicitud."}`, 'bot');
-                    }
-                    stopConversation();
-                    return;
-                }
-
-                const data = await response.json();
-
-                if (data.choices && data.choices[0] && data.choices[0].message) {
-                    const botReply = data.choices[0].message.content;
-                    appendMessage(botReply, 'bot');
-                    speakEnglish(botReply); 
-                    chatHistory.push({ role: "assistant", content: botReply });
-                }
-
-            } catch (error) {
-                console.error("Error crítico de ejecución:", error);
-                appendMessage("Connection issue. Conversation stopped.", 'bot');
-                stopConversation();
-            }
-        }
-
-        function appendMessage(text, sender) {
-            const msgDiv = document.createElement('div');
-            msgDiv.classList.add('message', sender);
-            msgDiv.innerHTML = `<div class="text">${text}</div>`;
-            chatBox.appendChild(msgDiv);
-            chatBox.scrollTop = chatBox.scrollHeight; 
-        }
-
-        sendBtn.addEventListener('click', () => {
-            sendMessage();
-            if (isConversationActive) recognition.abort(); 
-        });
-
-        userInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
+    // Si hay texto acumulado, iniciamos el contador de espera. 
+    // Si pasas 2.5 segundos sin decir una sola palabra, se dispara automáticamente el envío.
+    if (userInput.value.trim().length > 0) {
+        silenceTimer = setTimeout(() => {
+            if (isConversationActive && !isBotTalking) {
+                console.log("Silencio prolongado detectado. Enviando a Azure...");
+                try { recognition.stop(); } catch(e) {} // Detiene la escucha momentáneamente
                 sendMessage();
-                if (isConversationActive) recognition.abort();
             }
+        }, SILENCE_TIMEOUT);
+    }
+};
+
+recognition.onend = () => {
+    // Si la conversación sigue activa y el bot no está hablando, reactivamos de inmediato para no perder audición
+    if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
+        setTimeout(() => { startListening(); }, 200);
+    }
+};
+
+recognition.onerror = (event) => {
+    if (event.error === 'aborted') return; // Acción controlada para dar paso al bot
+    console.error("Error en el micrófono:", event.error);
+    
+    if (event.error === 'no-speech' && isConversationActive) {
+        startListening();
+    }
+};
+
+// 2. SÍNTESIS DE VOZ Y REENGANCHE MANOS LIBRES AUTOMÁTICO
+function speakEnglish(text) {
+    isBotTalking = true; 
+    clearTimeout(silenceTimer);
+    micBtn.classList.remove('recording');
+    
+    try { recognition.abort(); } catch(e) {}
+    window.speechSynthesis.cancel();
+    
+    const speech = new SpeechSynthesisUtterance();
+    speech.text = text;
+    speech.lang = 'en-US'; 
+    speech.volume = 1;
+    speech.rate = 0.95; 
+    speech.pitch = 1;
+    
+    const voices = window.speechSynthesis.getVoices();
+    const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
+    if (englishVoice) speech.voice = englishVoice;
+
+    // Cuando el tutor termina su frase, vuelve a encender el micrófono de forma automática
+    speech.onend = () => {
+        isBotTalking = false; 
+        if (isConversationActive) {
+            setTimeout(() => { startListening(); }, 400); 
+        }
+    };
+
+    window.speechSynthesis.speak(speech);
+}
+
+window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+
+// 3. ENVÍO DE MENSAJES A AZURE
+async function sendMessage() {
+    const text = userInput.value.trim();
+    if (!text) return;
+
+    appendMessage(text, 'user');
+    userInput.value = '';
+    chatHistory.push({ role: "user", content: text });
+
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'api-key': API_KEY 
+            },
+            body: JSON.stringify({ 
+                model: DEPLOYMENT_NAME, 
+                messages: chatHistory,
+                store: true 
+            })
         });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            appendMessage(`Azure Error: ${errorData.error?.message || "Error en la solicitud."}`, 'bot');
+            stopConversation();
+            return;
+        }
+
+        const data = await response.json();
+
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            const botReply = data.choices[0].message.content;
+            appendMessage(botReply, 'bot');
+            speakEnglish(botReply); 
+            chatHistory.push({ role: "assistant", content: botReply });
+        }
+
+    } catch (error) {
+        console.error("Error crítico de ejecución:", error);
+        appendMessage("Connection issue. Conversation stopped.", 'bot');
+        stopConversation();
+    }
+}
+
+function appendMessage(text, sender) {
+    const msgDiv = document.createElement('div');
+    msgDiv.classList.add('message', sender);
+    msgDiv.innerHTML = `<div class="text">${text}</div>`;
+    chatBox.appendChild(msgDiv);
+    chatBox.scrollTop = chatBox.scrollHeight; 
+}
+
+sendBtn.addEventListener('click', () => {
+    clearTimeout(silenceTimer);
+    try { recognition.stop(); } catch(e) {}
+    sendMessage();
+});
+
+userInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        clearTimeout(silenceTimer);
+        try { recognition.stop(); } catch(e) {}
+        sendMessage();
+    }
+});
     </script>
 </body>
 </html>
