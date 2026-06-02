@@ -288,19 +288,27 @@
     </div>
 
     <script>
-       // =========================================================================
+// =========================================================================
 // CONFIGURACIÓN DE ENDPOINTS (Azure AI Foundry)
 // =========================================================================
 const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
 const DEPLOYMENT_NAME = 'gpt-4.1'; 
 const API_URL = AZURE_BASE_URL + '/chat/completions';
 
-// Elementos del DOM
+// =========================================================================
+// ELEMENTOS DEL DOM COMPLETOS Y DECLARADOS
+// =========================================================================
 const chatBox = document.getElementById('chat-box');
 const userInput = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
 const micBtn = document.getElementById('mic-btn');
 const langSelect = document.getElementById('lang-select');
+
+// Elementos del Agente Holográfico y Estado
+const orbeAgent = document.getElementById('orbe-agent');
+const statusText = document.getElementById('status-text');
+const realtimeText = document.getElementById('realtime-text');
+const activationBtn = document.getElementById('activation-btn');
 
 // Elementos del panel de credenciales
 const keyPanel = document.getElementById('key-panel');
@@ -308,14 +316,16 @@ const keyInput = document.getElementById('key-input');
 const saveKeyBtn = document.getElementById('save-key-btn');
 const toggleKeyBtn = document.getElementById('toggle-key-btn');
 
-// Estados de control de flujo conversacional
+// =========================================================================
+// ESTADOS DE CONTROL DE FLUJO CONVERSACIONAL
+// =========================================================================
 let isConversationActive = false; 
 let isBotTalking = false; 
 let silenceTimer = null; 
 let accumulatedText = ""; 
-const SILENCE_TIMEOUT = 3000; // 3 segundos exactos para dar margen amplio al usuario
+const SILENCE_TIMEOUT = 3000; // 3 segundos de silencio absoluto para dar margen amplio al usuario
 
-// Sistema de carga de llave corporativa
+// Sistema de carga de llave corporativa (Protección de créditos en GitHub Pages)
 let API_KEY = localStorage.getItem('azure_tutor_key');
 if (API_KEY) {
     keyInput.value = API_KEY;
@@ -323,6 +333,7 @@ if (API_KEY) {
     keyPanel.classList.add('active');
 }
 
+// Controladores del panel de API Key
 toggleKeyBtn.addEventListener('click', () => keyPanel.classList.toggle('active'));
 
 saveKeyBtn.addEventListener('click', () => {
@@ -335,10 +346,11 @@ saveKeyBtn.addEventListener('click', () => {
     } else {
         localStorage.removeItem('azure_tutor_key');
         API_KEY = null;
+        realtimeText.innerText = "API Key eliminada.";
     }
 });
 
-// Configuración del Prompt Interno
+// Configuración de la personalidad bilingüe del tutor en Azure
 let chatHistory = [
     {
         role: "system",
@@ -350,9 +362,11 @@ let chatHistory = [
     }
 ];
 
-// Inicialización de Reconocimiento de Voz
+// =========================================================================
+// 1. RECONOCIMIENTO DE VOZ (Speech-to-Text) - FLUJO MANOS LIBRES ACUMULATIVO
+// =========================================================================
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const recognition = new SpeechRecognition();
+const recognition = new SpeechRecognition(); // Corregido: Ya no genera ReferenceError
 recognition.interimResults = false; 
 recognition.continuous = false;    
 
@@ -373,8 +387,12 @@ activationBtn.addEventListener('click', () => {
     }
 });
 
+// Control de estados visuales del Orbe de energía
 function changeVisualState(state) {
+    if (!orbeAgent || !statusText) return;
+    
     orbeAgent.classList.remove('listening', 'thinking', 'speaking');
+    
     if (state === 'listening') {
         orbeAgent.classList.add('listening');
         statusText.innerText = "Escuchando...";
@@ -401,7 +419,7 @@ function startListening() {
         recognition.start();
         changeVisualState('listening');
     } catch (e) {
-        console.log("Re-enganchando flujo de hardware...");
+        console.log("Re-enganchando flujo de hardware del micrófono...");
     }
 }
 
@@ -418,14 +436,18 @@ function stopConversation() {
 }
 
 recognition.onresult = (event) => {
+    // Si el usuario emite sonido, detenemos cualquier temporizador de envío anterior
     clearTimeout(silenceTimer);
+    
     const resultText = event.results[0][0].transcript.trim();
     
     if (resultText.length > 0) {
+        // Concatenamos las frases de forma indefinida en la memoria
         accumulatedText += (accumulatedText ? " " : "") + resultText;
         realtimeText.innerText = `"${accumulatedText}"`; 
     }
 
+    // Temporizador inteligente: Solo envía tras 3 segundos exactos de silencio absoluto
     silenceTimer = setTimeout(() => {
         if (isConversationActive && !isBotTalking && accumulatedText.trim().length > 0) {
             executeSend();
@@ -434,9 +456,11 @@ recognition.onresult = (event) => {
 };
 
 recognition.onend = () => {
+    // Si el micrófono se cierra solo por una pausa natural, lo reabrimos de inmediato en segundo plano
     if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
         startListening();
         
+        // Mantenemos activo el cronómetro de cierre definitivo si ya hay texto guardado
         if (accumulatedText.trim().length > 0 && !silenceTimer) {
             silenceTimer = setTimeout(() => {
                 if (isConversationActive && !isBotTalking) {
@@ -448,13 +472,16 @@ recognition.onend = () => {
 };
 
 recognition.onerror = (event) => {
-    if (event.error === 'aborted') return;
+    if (event.error === 'aborted') return; // Salida limpia controlada
+    console.error("Notificación de hardware:", event.error);
     if (event.error === 'no-speech' && isConversationActive) {
         startListening();
     }
 };
 
-// Síntesis de voz acoplada a las animaciones del orbe con FILTRO LIMPIADOR
+// =========================================================================
+// 2. SÍNTESIS DE VOZ (Text-to-Speech) - FILTRADO DE MARKDOWN / ASTERISCOS
+// =========================================================================
 function speakEnglish(text) {
     isBotTalking = true; 
     clearTimeout(silenceTimer);
@@ -463,18 +490,16 @@ function speakEnglish(text) {
     try { recognition.abort(); } catch(e) {}
     window.speechSynthesis.cancel();
     
-    // =========================================================================
-    // FILTRO SANITIZADOR: Limpia asteriscos y marcas Markdown antes de hablar
-    // =========================================================================
+    // FILTRO SANITIZADOR: Elimina asteriscos de negrita, hashtags de títulos y guiones de listas para que la voz no los lea
     let cleanText = text
-        .replace(/\*\*/g, '')  // Elimina los dobles asteriscos de las negritas
-        .replace(/\*/g, '')    // Elimina asteriscos simples
-        .replace(/#/g, '')     // Elimina hashtags de títulos
-        .replace(/`/g, '')     // Elimina comillas invertidas de código
-        .replace(/-\s+/g, ''); // Elimina los guiones de las listas con viñetas
+        .replace(/\*\*/g, '')  
+        .replace(/\*/g, '')    
+        .replace(/#/g, '')     
+        .replace(/`/g, '')     
+        .replace(/-\s+/g, ''); 
 
     const speech = new SpeechSynthesisUtterance();
-    speech.text = cleanText; // Le pasamos el texto 100% limpio al motor de voz
+    speech.text = cleanText; 
     speech.lang = 'en-US'; 
     speech.volume = 1;
     speech.rate = 0.95; 
@@ -483,6 +508,7 @@ function speakEnglish(text) {
     const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
     if (englishVoice) speech.voice = englishVoice;
 
+    // Al finalizar la locución del bot, devolvemos el turno al micrófono de forma automática
     speech.onend = () => {
         isBotTalking = false; 
         if (isConversationActive) {
@@ -498,6 +524,9 @@ function speakEnglish(text) {
 
 window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 
+// =========================================================================
+// 3. COMUNICACIÓN HTTP CON AZURE AI FOUNDRY
+// =========================================================================
 function executeSend() {
     changeVisualState('thinking');
     try { recognition.abort(); } catch(e) {}
@@ -530,7 +559,7 @@ async function sendMessage() {
 
         if (!response.ok) {
             const errorData = await response.json();
-            realtimeText.innerText = `Error: ${errorData.error?.message || "Rechazo de credenciales."}`;
+            realtimeText.innerText = `Error: ${errorData.error?.message || "Rechazo de comunicación corporativa."}`;
             stopConversation();
             return;
         }
@@ -540,10 +569,10 @@ async function sendMessage() {
         if (data.choices && data.choices[0] && data.choices[0].message) {
             const botReply = data.choices[0].message.content;
             
-            // En pantalla se conserva el texto original con saltos de línea para soporte visual cómodo
+            // El monitor visual mantiene el formato del texto para lectura cómoda
             realtimeText.innerText = botReply; 
             
-            // Enviamos a la función de voz, la cual se encargará de purgar los asteriscos
+            // La función se encarga de hablar omitiendo los molestos asteriscos
             speakEnglish(botReply); 
             
             chatHistory.push({ role: "assistant", content: botReply });
@@ -551,9 +580,26 @@ async function sendMessage() {
 
     } catch (error) {
         console.error(error);
-        realtimeText.innerText = "Fallo de conexión externa.";
+        realtimeText.innerText = "Fallo crítico de conexión externa.";
         stopConversation();
     }
+}
+
+// Listeners auxiliares para envíos manuales desde teclado
+if (sendBtn) {
+    sendBtn.addEventListener('click', () => {
+        clearTimeout(silenceTimer);
+        executeSend();
+    });
+}
+
+if (userInput) {
+    userInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            clearTimeout(silenceTimer);
+            executeSend();
+        }
+    });
 }
     </script>
 </body>
