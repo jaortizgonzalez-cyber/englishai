@@ -390,21 +390,24 @@ if(activationBtn) {
             activationBtn.classList.add('active');
             accumulatedText = "";
             
-            // =========================================================================
-            // TRUCO MÓVIL CRÍTICO: Disparar audio mudo en el clic físico para abrir canales
-            // =========================================================================
+            // 1. DESBLOQUEO DE HARDWARE MULTIMEDIA MÓVIL
             try {
                 window.speechSynthesis.cancel();
-                const unlockSpeech = new SpeechSynthesisUtterance(' ');
-                unlockSpeech.volume = 0; // Silencio absoluto
+                const unlockSpeech = new SpeechSynthesisUtterance('Starting Multivac');
+                unlockSpeech.volume = 0.01; // Audio mínimo audible para forzar al celular a abrir la bocina físicamente
                 unlockSpeech.rate = 1;
+                unlockSpeech.lang = 'en-US';
                 window.speechSynthesis.speak(unlockSpeech);
-                console.log("Canal de audio móvil desbloqueado con éxito.");
+                console.log("Canal de audio móvil inicializado.");
             } catch(e) {
-                console.error("No se pudo pre-activar el motor de voz:", e);
+                console.error("Fallo de pre-activación:", e);
             }
 
-            startListening();
+            // 2. TOLERANCIA ASÍNCRONA: Esperamos 300ms a que la bocina abra antes de encender el micrófono
+            setTimeout(() => {
+                if (isConversationActive) startListening();
+            }, 300);
+
         } else {
             stopConversation();
         }
@@ -440,7 +443,7 @@ function startListening() {
         recognition.start();
         changeVisualState('listening');
     } catch (e) {
-        console.log("Re-enganchando hardware de micrófono...");
+        console.log("Micrófono reconfigurando buffers de audio...");
     }
 }
 
@@ -474,8 +477,10 @@ recognition.onresult = (event) => {
 };
 
 recognition.onend = () => {
+    // Tolerancia de reenganche móvil: Espera 200ms tras cerrarse para volver a iniciar limpiamente
     if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
-        startListening();
+        setTimeout(() => { startListening(); }, 200);
+        
         if (accumulatedText.trim().length > 0 && !silenceTimer) {
             silenceTimer = setTimeout(() => {
                 if (isConversationActive && !isBotTalking) {
@@ -488,12 +493,12 @@ recognition.onend = () => {
 
 recognition.onerror = (event) => {
     if (event.error === 'aborted') return;
+    console.log("Error controlado de micro en móvil:", event.error);
     if (event.error === 'no-speech' && isConversationActive) {
-        startListening();
+        setTimeout(() => { startListening(); }, 200);
     }
 };
 
-// Síntesis de voz acoplada al simulador virtual de tiempos
 function speakEnglish(text) {
     isBotTalking = true; 
     clearTimeout(silenceTimer);
@@ -524,8 +529,8 @@ function speakEnglish(text) {
     speech.rate = 0.95; 
     
     const voices = window.speechSynthesis.getVoices();
-    // En móviles preferimos las voces nativas del sistema operativo (iOS/Android) para optimizar recursos
-    const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
+    // Prioridad a motores nativos de iOS/Android
+    const englishVoice = voices.find(v => v.lang === 'en-US' && !v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
     if (englishVoice) speech.voice = englishVoice;
 
     let currentWordIndex = 0;
@@ -575,7 +580,8 @@ function speakEnglish(text) {
         isBotTalking = false; 
         if (isConversationActive) {
             changeVisualState('listening');
-            setTimeout(() => { startListening(); }, 400); 
+            // Retraso seguro para móviles antes de reabrir micrófono tras hablar
+            setTimeout(() => { startListening(); }, 500); 
         } else {
             changeVisualState('idle');
         }
@@ -636,7 +642,6 @@ async function sendMessage() {
         if(realtimeText) realtimeText.innerText = "Fallo crítico de conexión externa.";
         stopConversation();
     }
-}
-    </script>
+}    </script>
 </body>
 </html>
