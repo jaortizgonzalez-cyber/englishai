@@ -221,7 +221,8 @@ const toggleKeyBtn = document.getElementById('toggle-key-btn');
 let isConversationActive = false; 
 let isBotTalking = false; 
 let silenceTimer = null; 
-const SILENCE_TIMEOUT = 2500; // Tiempo de espera en milisegundos (2.5 segundos de silencio total)
+let accumulatedText = ""; // Variable clave: Guardará todo lo que hables pacientemente
+const SILENCE_TIMEOUT = 3000; // 3 segundos completos de silencio absoluto para enviar
 
 // Recuperar llave local si existe
 let API_KEY = localStorage.getItem('azure_tutor_key');
@@ -261,11 +262,11 @@ let chatHistory = [
     }
 ];
 
-// 1. RECONOCIMIENTO DE VOZ CON INTELIGENCIA DE TIEMPOS DE SILENCIO
+// 1. RECONOCIMIENTO DE VOZ CON RE-ENGANCHE SEGURO Y ACUMULADOR
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const recognition = new SpeechRecognition();
-recognition.interimResults = true; 
-recognition.continuous = true;     // Impide que el navegador corte por su cuenta al pausar
+recognition.interimResults = false; // Solo procesamos resultados definidos para evitar duplicados estorbosos
+recognition.continuous = false;    // Dejamos que Chrome corte de forma nativa, pero lo reenganchamos sin enviar
 
 micBtn.addEventListener('click', () => {
     if (!API_KEY) {
@@ -276,6 +277,7 @@ micBtn.addEventListener('click', () => {
 
     if (!isConversationActive) {
         isConversationActive = true;
+        accumulatedText = "";
         startListening();
     } else {
         stopConversation();
@@ -286,12 +288,11 @@ function startListening() {
     if (!isConversationActive || window.speechSynthesis.speaking || isBotTalking) return;
     
     try {
-        userInput.value = ''; 
         recognition.lang = langSelect.value; 
         recognition.start();
         micBtn.classList.add('recording');
     } catch (e) {
-        console.log("Reconocimiento de voz ya en ejecución o liberando recursos...");
+        console.log("Micrófono reacomodando estados...");
     }
 }
 
@@ -299,53 +300,62 @@ function stopConversation() {
     isConversationActive = false;
     isBotTalking = false;
     clearTimeout(silenceTimer);
+    accumulatedText = "";
     try { recognition.abort(); } catch(e) {}
     window.speechSynthesis.cancel();
     micBtn.classList.remove('recording');
+    userInput.value = "";
 }
 
-// CAPTURA FLUIDA EN TIEMPO REAL
+// CADA VEZ QUE EL NAVEGADOR FORMULA UNA MINIFRASE
 recognition.onresult = (event) => {
-    // Cada vez que el usuario emite un sonido o habla, destruimos el temporizador de silencio anterior
+    // Frenamos cualquier intento previo de envío a Azure
     clearTimeout(silenceTimer);
 
-    let currentTranscript = '';
-    for (let i = event.resultIndex; i < event.results.length; ++i) {
-        currentTranscript += event.results[i][0].transcript;
+    const resultText = event.results[0][0].transcript.trim();
+    if (resultText.length > 0) {
+        // Concatenamos la nueva frase al bloque general que llevas hablando
+        accumulatedText += (accumulatedText ? " " : "") + resultText;
+        userInput.value = accumulatedText; // Lo vas viendo en pantalla en tiempo real
     }
-    
-    userInput.value = currentTranscript;
 
-    // Si hay texto acumulado, iniciamos el contador de espera. 
-    // Si pasas 2.5 segundos sin decir una sola palabra, se dispara automáticamente el envío.
-    if (userInput.value.trim().length > 0) {
-        silenceTimer = setTimeout(() => {
-            if (isConversationActive && !isBotTalking) {
-                console.log("Silencio prolongado detectado. Enviando a Azure...");
-                try { recognition.stop(); } catch(e) {} // Detiene la escucha momentáneamente
-                sendMessage();
-            }
-        }, SILENCE_TIMEOUT);
-    }
+    // Reiniciamos el cronómetro de 3 segundos. 
+    // Solo si pasas 3 segundos exactos sin decir absolutamente nada que el navegador capte, se va a Azure.
+    silenceTimer = setTimeout(() => {
+        if (isConversationActive && !isBotTalking && accumulatedText.trim().length > 0) {
+            console.log("Plazo de silencio cumplido. Enviando párrafo completo...");
+            executeSend();
+        }
+    }, SILENCE_TIMEOUT);
 };
 
 recognition.onend = () => {
-    // Si la conversación sigue activa y el bot no está hablando, reactivamos de inmediato para no perder audición
+    // Si el navegador se cortó solo por una pausa tuya, pero NO se ha cumplido el tiempo de silencio,
+    // volvemos a encender el micrófono inmediatamente en segundo plano para seguir acumulando.
     if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
-        setTimeout(() => { startListening(); }, 200);
+        startListening();
+        
+        // Mantenemos vivo el temporizador por si esta pausa resulta ser el final de tu intervención
+        if (accumulatedText.trim().length > 0 && !silenceTimer) {
+            silenceTimer = setTimeout(() => {
+                if (isConversationActive && !isBotTalking) {
+                    executeSend();
+                }
+            }, SILENCE_TIMEOUT);
+        }
     }
 };
 
 recognition.onerror = (event) => {
-    if (event.error === 'aborted') return; // Acción controlada para dar paso al bot
-    console.error("Error en el micrófono:", event.error);
+    if (event.error === 'aborted') return;
+    console.error("Notificación del micrófono:", event.error);
     
     if (event.error === 'no-speech' && isConversationActive) {
         startListening();
     }
 };
 
-// 2. SÍNTESIS DE VOZ Y REENGANCHE MANOS LIBRES AUTOMÁTICO
+// 2. SÍNTESIS DE VOZ NATIVA
 function speakEnglish(text) {
     isBotTalking = true; 
     clearTimeout(silenceTimer);
@@ -365,7 +375,6 @@ function speakEnglish(text) {
     const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
     if (englishVoice) speech.voice = englishVoice;
 
-    // Cuando el tutor termina su frase, vuelve a encender el micrófono de forma automática
     speech.onend = () => {
         isBotTalking = false; 
         if (isConversationActive) {
@@ -378,13 +387,22 @@ function speakEnglish(text) {
 
 window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 
-// 3. ENVÍO DE MENSAJES A AZURE
+// 3. PROCESAMIENTO Y ENVÍO REFACTORIZADO
+function executeSend() {
+    try { recognition.abort(); } catch(e) {}
+    sendMessage();
+}
+
 async function sendMessage() {
-    const text = userInput.value.trim();
+    const text = accumulatedText.trim();
     if (!text) return;
 
     appendMessage(text, 'user');
     userInput.value = '';
+    accumulatedText = ""; // Reseteamos el acumulador para el próximo turno
+    clearTimeout(silenceTimer);
+    silenceTimer = null;
+
     chatHistory.push({ role: "user", content: text });
 
     try {
@@ -434,17 +452,14 @@ function appendMessage(text, sender) {
 
 sendBtn.addEventListener('click', () => {
     clearTimeout(silenceTimer);
-    try { recognition.stop(); } catch(e) {}
-    sendMessage();
+    executeSend();
 });
 
 userInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         clearTimeout(silenceTimer);
-        try { recognition.stop(); } catch(e) {}
-        sendMessage();
+        executeSend();
     }
-});
-    </script>
+});    </script>
 </body>
 </html>
