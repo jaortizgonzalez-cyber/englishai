@@ -4,462 +4,541 @@
     <meta charset="UTF-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI English Tutor</title>
+    <title>Multivac Voice Agent</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
     <style>
         :root {
-            --primary-color: #4F46E5;
-            --bg-color: #F3F4F6;
-            --chat-bg: #FFFFFF;
-            --user-msg: #4F46E5;
-            --bot-msg: #E5E7EB;
-            --text-dark: #1F2937;
-            --text-light: #F9FAFB;
+            --bg-dark: #0A0F1D;
+            --orbe-idle: rgba(79, 70, 229, 0.4);
+            --orbe-listening: rgba(236, 72, 153, 0.6);
+            --orbe-thinking: rgba(34, 211, 238, 0.7);
+            --orbe-speaking: rgba(168, 85, 247, 0.7);
+            --text-glow: #E0E7FF;
         }
 
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: 'Segoe UI', Roboto, Helvetica, sans-serif;
         }
 
         body {
-            background-color: var(--bg-color);
+            background-color: var(--bg-dark);
+            background: radial-gradient(circle at center, #1E1B4B 0%, #020617 100%);
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
+            color: #F3F4F6;
+            overflow: hidden;
         }
 
-        .chat-container {
-            width: 100%;
-            max-width: 450px;
-            height: 90vh;
-            background-color: var(--chat-bg);
-            border-radius: 20px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        /* Estructura Holográfica Principal */
+        .agent-container {
+            width: 100vw;
+            max-width: 600px;
+            height: 100vh;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            justify-content: space-between;
+            align-items: center;
+            padding: 40px 20px;
             position: relative;
         }
 
         header {
-            background-color: var(--primary-color);
-            color: var(--text-light);
-            padding: 20px;
             text-align: center;
+            z-index: 10;
         }
 
-        header h2 { font-size: 1.2rem; margin-bottom: 5px; }
-        header p { font-size: 0.85rem; opacity: 0.8; }
+        header h1 {
+            font-size: 1.8rem;
+            font-weight: 300;
+            letter-spacing: 4px;
+            color: var(--text-glow);
+            text-shadow: 0 0 15px rgba(199, 210, 254, 0.5);
+            margin-bottom: 8px;
+        }
 
-        /* Contenedor de configuración de API Key integrado en la UI */
-        .key-panel {
-            background-color: #EEF2FF;
-            padding: 10px 15px;
-            border-bottom: 1px solid #E0E7FF;
-            display: none; /* Se controla con JS */
-            gap: 10px;
+        /* Subtítulo de estado que cambia dinámicamente */
+        #status-text {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #94A3B8;
+            transition: all 0.3s ease;
+        }
+
+        /* EL ORBE CENTRAL DE INTELIGENCIA */
+        .orbe-wrapper {
+            position: relative;
+            width: 260px;
+            height: 260px;
+            display: flex;
+            justify-content: center;
             align-items: center;
         }
 
-        .key-panel.active { display: flex; }
+        .orbe {
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.2) 0%, rgba(0,0,0,0) 80%), var(--orbe-idle);
+            box-shadow: 0 0 60px 10px rgba(79, 70, 229, 0.3), inset 0 0 30px rgba(255, 255, 255, 0.1);
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            cursor: pointer;
+        }
 
-        .key-panel input {
+        /* Capas de anillos de energía fluidos */
+        .orbe::before, .orbe::after {
+            content: '';
+            position: absolute;
+            top: -15px; left: -15px; right: -15px; bottom: -15px;
+            border-radius: 50%;
+            border: 2px dashed rgba(168, 85, 247, 0.2);
+            animation: rotateRing 12s linear infinite;
+            transition: all 0.5s ease;
+        }
+
+        .orbe::after {
+            top: -30px; left: -30px; right: -30px; bottom: -30px;
+            border: 1px solid rgba(34, 211, 238, 0.1);
+            animation: rotateRingInverse 20s linear infinite;
+        }
+
+        /* Estilos en tiempo real controlados por el estado de la IA */
+        .orbe.listening {
+            background-color: var(--orbe-listening);
+            box-shadow: 0 0 80px 25px rgba(236, 72, 153, 0.5);
+            transform: scale(1.05);
+            animation: pulseListening 1.8s ease-in-out infinite;
+        }
+
+        .orbe.thinking {
+            background-color: var(--orbe-thinking);
+            box-shadow: 0 0 90px 30px rgba(34, 211, 238, 0.6);
+            transform: scale(0.95);
+            animation: rotateThinking 1s linear infinite;
+        }
+
+        .orbe.speaking {
+            background-color: var(--orbe-speaking);
+            box-shadow: 0 0 100px 35px rgba(168, 85, 247, 0.6);
+            animation: waveSpeaking 0.6s ease-in-out infinite alternate;
+        }
+
+        /* Monitor de Texto Subliminal (Muestra lo que hablas de forma elegante) */
+        .transcript-monitor {
+            width: 100%;
+            max-width: 480px;
+            text-align: center;
+            min-height: 60px;
+            padding: 10px;
+        }
+
+        #realtime-text {
+            font-size: 1.1rem;
+            font-weight: 300;
+            line-height: 1.5;
+            color: #CBD5E1;
+            font-style: italic;
+            opacity: 0.85;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        /* Consola de Control Inferior */
+        .control-bar {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 15px 25px;
+            border-radius: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            z-index: 10;
+        }
+
+        .control-btn {
+            background: none;
+            border: none;
+            color: #94A3B8;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .control-btn:hover {
+            color: #FFF;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        #activation-btn {
+            background: rgba(79, 70, 229, 0.2);
+            color: #A5B4FC;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            font-size: 1.4rem;
+            width: 54px;
+            height: 54px;
+        }
+
+        #activation-btn.active {
+            background: rgba(236, 72, 153, 0.2);
+            color: #F472B6;
+            border-color: rgba(236, 72, 153, 0.4);
+            box-shadow: 0 0 15px rgba(236, 72, 153, 0.3);
+        }
+
+        #lang-select {
+            background: transparent;
+            color: #94A3B8;
+            border: none;
+            font-size: 0.85rem;
+            outline: none;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        /* Panel Oculto de API Key */
+        .key-overlay {
+            position: absolute;
+            top: 110px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 12px;
+            border-radius: 15px;
+            display: none;
+            gap: 10px;
+            width: 85%;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+        }
+        .key-overlay.active { display: flex; }
+        .key-overlay input {
             flex: 1;
+            background: #020617;
+            border: 1px solid #334155;
             padding: 8px 12px;
-            border: 1px solid #C7D2FE;
             border-radius: 8px;
+            color: #fff;
             outline: none;
             font-size: 0.85rem;
         }
 
-        .chat-box {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
+        /* ANIMACIONES CSS AVANZADAS */
+        @keyframes rotateRing { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes rotateRingInverse { 0% { transform: rotate(360deg); } 100% { transform: rotate(0deg); } }
+        
+        @keyframes pulseListening {
+            0% { box-shadow: 0 0 60px 15px rgba(236, 72, 153, 0.4); }
+            50% { box-shadow: 0 0 90px 30px rgba(236, 72, 153, 0.6); }
+            100% { box-shadow: 0 0 60px 15px rgba(236, 72, 153, 0.4); }
         }
 
-        .message {
-            max-width: 80%;
-            display: flex;
-        }
-
-        .message .text {
-            padding: 12px 16px;
-            border-radius: 18px;
-            font-size: 0.95rem;
-            line-height: 1.4;
-        }
-
-        .message.user { align-self: flex-end; }
-        .message.user .text {
-            background-color: var(--user-msg);
-            color: var(--text-light);
-            border-bottom-right-radius: 4px;
-        }
-
-        .message.bot { align-self: flex-start; }
-        .message.bot .text {
-            background-color: var(--bot-msg);
-            color: var(--text-dark);
-            border-bottom-left-radius: 4px;
-        }
-
-        .input-area {
-            padding: 15px;
-            background-color: var(--chat-bg);
-            border-top: 1px solid #E5E7EB;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        #lang-select {
-            padding: 8px;
-            border-radius: 8px;
-            border: 1px solid #ccc;
-            font-size: 0.8rem;
-            outline: none;
-            background-color: #fff;
-            cursor: pointer;
-        }
-
-        #user-input {
-            flex: 1;
-            padding: 12px;
-            border: 1px solid #ccc;
-            border-radius: 20px;
-            outline: none;
-            font-size: 0.95rem;
-        }
-
-        .icon-btn {
-            background: none;
-            border: none;
-            font-size: 1.2rem;
-            color: #6B7280;
-            cursor: pointer;
-            transition: color 0.3s, transform 0.1s;
-        }
-
-        .icon-btn:hover { color: var(--primary-color); }
-        .icon-btn:active { transform: scale(0.95); }
-        .icon-btn.primary { color: var(--primary-color); }
-
-        .recording {
-            color: #EF4444 !important;
-            animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.15); }
-            100% { transform: scale(1); }
+        @keyframes waveSpeaking {
+            0% { transform: scale(1); box-shadow: 0 0 70px 20px rgba(168, 85, 247, 0.5); }
+            100% { transform: scale(1.08); box-shadow: 0 0 110px 40px rgba(168, 85, 247, 0.7); }
         }
     </style>
 </head>
 <body>
 
-    <div class="chat-container">
+    <div class="agent-container">
         <header>
-            <h2>🇬🇧 English Tutor</h2>
-            <p>Habla en inglés o pide ayuda en español</p>
+            <h1>MULTIVAC AI</h1>
+            <div id="status-text">Agente Inactivo</div>
         </header>
 
-        <div class="key-panel" id="key-panel">
+        <div class="key-overlay" id="key-panel">
             <input type="password" id="key-input" placeholder="Ingresa tu Azure API Key...">
-            <button id="save-key-btn" class="icon-btn primary" title="Guardar Llave"><i class="fas fa-save"></i></button>
-        </div>
-        
-        <div class="chat-box" id="chat-box">
-            <div class="message bot">
-                <div class="text">Hello! I'm your English tutor. Please ensure your Azure API Key is configured by clicking the key icon below. What would you like to talk about today?</div>
-            </div>
+            <button id="save-key-btn" class="control-btn" style="color: #34D399;"><i class="fas fa-save"></i></button>
         </div>
 
-        <div class="input-area">
-            <button id="toggle-key-btn" class="icon-btn" title="Configurar API Key"><i class="fas fa-key"></i></button>
-            <select id="lang-select" title="Idioma del Micrófono">
-                <option value="en-US">Mic: EN</option>
-                <option value="es-ES">Mic: ES</option>
+        <div class="orbe-wrapper">
+            <div class="orbe" id="orbe-agent" title="Haz clic abajo para iniciar"></div>
+        </div>
+
+        <div class="transcript-monitor">
+            <p id="realtime-text">Presiona el botón inferior para sincronizar...</p>
+        </div>
+
+        <div class="control-bar">
+            <button id="toggle-key-btn" class="control-btn" title="Configurar Llave"><i class="fas fa-key"></i></button>
+            
+            <button id="activation-btn" class="control-btn" title="Iniciar Conversación Manos Libres">
+                <i class="fas fa-microphone"></i>
+            </button>
+            
+            <select id="lang-select" title="Idioma del canal">
+                <option value="en-US">ANG / EN</option>
+                <option value="es-ES">ESP / ES</option>
             </select>
-            <input type="text" id="user-input" placeholder="Type or speak...">
-            <button id="mic-btn" class="icon-btn" title="Hablar / Pausar"><i class="fas fa-microphone"></i></button>
-            <button id="send-btn" class="icon-btn primary" title="Enviar"><i class="fas fa-paper-plane"></i></button>
         </div>
     </div>
 
     <script>
-        // =========================================================================
-// CONFIGURACIÓN DE ENDPOINTS (Azure AI Foundry)
-// =========================================================================
-const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
-const DEPLOYMENT_NAME = 'gpt-4.1'; 
-const API_URL = AZURE_BASE_URL + '/chat/completions';
+        // Configuración de Endpoints
+        const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
+        const DEPLOYMENT_NAME = 'gpt-4.1'; 
+        const API_URL = AZURE_BASE_URL + '/chat/completions';
 
-// Elementos del DOM
-const chatBox = document.getElementById('chat-box');
-const userInput = document.getElementById('user-input');
-const sendBtn = document.getElementById('send-btn');
-const micBtn = document.getElementById('mic-btn');
-const langSelect = document.getElementById('lang-select');
-
-// Elementos del panel de credenciales
-const keyPanel = document.getElementById('key-panel');
-const keyInput = document.getElementById('key-input');
-const saveKeyBtn = document.getElementById('save-key-btn');
-const toggleKeyBtn = document.getElementById('toggle-key-btn');
-
-// Estados de control de flujo conversacional
-let isConversationActive = false; 
-let isBotTalking = false; 
-let silenceTimer = null; 
-let accumulatedText = ""; // Variable clave: Guardará todo lo que hables pacientemente
-const SILENCE_TIMEOUT = 3000; // 3 segundos completos de silencio absoluto para enviar
-
-// Recuperar llave local si existe
-let API_KEY = localStorage.getItem('azure_tutor_key');
-if (API_KEY) {
-    keyInput.value = API_KEY;
-} else {
-    keyPanel.classList.add('active');
-}
-
-// Acciones para la llave
-toggleKeyBtn.addEventListener('click', () => {
-    keyPanel.classList.toggle('active');
-});
-
-saveKeyBtn.addEventListener('click', () => {
-    const val = keyInput.value.trim();
-    if (val) {
-        API_KEY = val;
-        localStorage.setItem('azure_tutor_key', API_KEY);
-        keyPanel.classList.remove('active');
-        appendMessage("🔑 System: API Key guardada correctamente de forma local.", 'bot');
-    } else {
-        localStorage.removeItem('azure_tutor_key');
-        API_KEY = null;
-        alert("Llave eliminada.");
-    }
-});
-
-let chatHistory = [
-    {
-        role: "system",
-        content: "You are an empathetic, friendly, and conversational English tutor. Your main goal is to help me practice my spoken English. Rules: 1. ALWAYS reply in natural and clear English. 2. If I talk or ask something in Spanish because I am stuck or don't know how to say it, kindly translate it or show me the correct way to say it in English, and then continue our conversation in English. 3. Keep your answers short, conversational, and easy to read."
-    },
-    {
-        role: "assistant",
-        content: "Hello! I am your English tutor, and I'm very excited to help you practice. Don't worry if you need to use Spanish sometimes, I will help you out. What would you like to talk about today?"
-    }
-];
-
-// 1. RECONOCIMIENTO DE VOZ CON RE-ENGANCHE SEGURO Y ACUMULADOR
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const recognition = new SpeechRecognition();
-recognition.interimResults = false; // Solo procesamos resultados definidos para evitar duplicados estorbosos
-recognition.continuous = false;    // Dejamos que Chrome corte de forma nativa, pero lo reenganchamos sin enviar
-
-micBtn.addEventListener('click', () => {
-    if (!API_KEY) {
-        keyPanel.classList.add('active');
-        alert("Por favor, guarda primero tu API Key.");
-        return;
-    }
-
-    if (!isConversationActive) {
-        isConversationActive = true;
-        accumulatedText = "";
-        startListening();
-    } else {
-        stopConversation();
-    }
-});
-
-function startListening() {
-    if (!isConversationActive || window.speechSynthesis.speaking || isBotTalking) return;
-    
-    try {
-        recognition.lang = langSelect.value; 
-        recognition.start();
-        micBtn.classList.add('recording');
-    } catch (e) {
-        console.log("Micrófono reacomodando estados...");
-    }
-}
-
-function stopConversation() {
-    isConversationActive = false;
-    isBotTalking = false;
-    clearTimeout(silenceTimer);
-    accumulatedText = "";
-    try { recognition.abort(); } catch(e) {}
-    window.speechSynthesis.cancel();
-    micBtn.classList.remove('recording');
-    userInput.value = "";
-}
-
-// CADA VEZ QUE EL NAVEGADOR FORMULA UNA MINIFRASE
-recognition.onresult = (event) => {
-    // Frenamos cualquier intento previo de envío a Azure
-    clearTimeout(silenceTimer);
-
-    const resultText = event.results[0][0].transcript.trim();
-    if (resultText.length > 0) {
-        // Concatenamos la nueva frase al bloque general que llevas hablando
-        accumulatedText += (accumulatedText ? " " : "") + resultText;
-        userInput.value = accumulatedText; // Lo vas viendo en pantalla en tiempo real
-    }
-
-    // Reiniciamos el cronómetro de 3 segundos. 
-    // Solo si pasas 3 segundos exactos sin decir absolutamente nada que el navegador capte, se va a Azure.
-    silenceTimer = setTimeout(() => {
-        if (isConversationActive && !isBotTalking && accumulatedText.trim().length > 0) {
-            console.log("Plazo de silencio cumplido. Enviando párrafo completo...");
-            executeSend();
-        }
-    }, SILENCE_TIMEOUT);
-};
-
-recognition.onend = () => {
-    // Si el navegador se cortó solo por una pausa tuya, pero NO se ha cumplido el tiempo de silencio,
-    // volvemos a encender el micrófono inmediatamente en segundo plano para seguir acumulando.
-    if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
-        startListening();
+        // Elementos UI del Orbe y Monitor
+        const orbeAgent = document.getElementById('orbe-agent');
+        const statusText = document.getElementById('status-text');
+        const realtimeText = document.getElementById('realtime-text');
+        const activationBtn = document.getElementById('activation-btn');
+        const langSelect = document.getElementById('lang-select');
         
-        // Mantenemos vivo el temporizador por si esta pausa resulta ser el final de tu intervención
-        if (accumulatedText.trim().length > 0 && !silenceTimer) {
+        // Elementos del panel de llaves
+        const keyPanel = document.getElementById('key-panel');
+        const keyInput = document.getElementById('key-input');
+        const saveKeyBtn = document.getElementById('save-key-btn');
+        const toggleKeyBtn = document.getElementById('toggle-key-btn');
+
+        // Variables de flujo
+        let isConversationActive = false; 
+        let isBotTalking = false; 
+        let silenceTimer = null; 
+        let accumulatedText = ""; 
+        const SILENCE_TIMEOUT = 3000; // 3 segundos exactos para dar margen amplio al usuario
+
+        // Sistema de carga de llave corporativa
+        let API_KEY = localStorage.getItem('azure_tutor_key');
+        if (API_KEY) {
+            keyInput.value = API_KEY;
+        } else {
+            keyPanel.classList.add('active');
+        }
+
+        toggleKeyBtn.addEventListener('click', () => keyPanel.classList.toggle('active'));
+
+        saveKeyBtn.addEventListener('click', () => {
+            const val = keyInput.value.trim();
+            if (val) {
+                API_KEY = val;
+                localStorage.setItem('azure_tutor_key', API_KEY);
+                keyPanel.classList.remove('active');
+                realtimeText.innerText = "Sincronizado. Listo para operar.";
+            } else {
+                localStorage.removeItem('azure_tutor_key');
+                API_KEY = null;
+            }
+        });
+
+        // Configuración del Prompt Interno
+        let chatHistory = [
+            {
+                role: "system",
+                content: "You are an empathetic, friendly, and conversational English tutor. Your main goal is to help me practice my spoken English. Rules: 1. ALWAYS reply in natural and clear English. 2. If I talk or ask something in Spanish because I am stuck or don't know how to say it, kindly translate it or show me the correct way to say it in English, and then continue our conversation in English. 3. Keep your answers short, conversational, and easy to read."
+            },
+            {
+                role: "assistant",
+                content: "Hello! I am your English tutor, and I'm very excited to help you practice. Don't worry if you need to use Spanish sometimes, I will help you out. What would you like to talk about today?"
+            }
+        ];
+
+        // Inicialización de Reconocimiento de Voz
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.interimResults = false; 
+        recognition.continuous = false;    
+
+        activationBtn.addEventListener('click', () => {
+            if (!API_KEY) {
+                keyPanel.classList.add('active');
+                alert("Ingresa y guarda tu API Key para poder activar al agente.");
+                return;
+            }
+
+            if (!isConversationActive) {
+                isConversationActive = true;
+                activationBtn.classList.add('active');
+                accumulatedText = "";
+                startListening();
+            } else {
+                stopConversation();
+            }
+        });
+
+        function changeVisualState(state) {
+            orbeAgent.classList.remove('listening', 'thinking', 'speaking');
+            if (state === 'listening') {
+                orbeAgent.classList.add('listening');
+                statusText.innerText = "Escuchando...";
+                statusText.style.color = "#EC4899";
+            } else if (state === 'thinking') {
+                orbeAgent.classList.add('thinking');
+                statusText.innerText = "Procesando...";
+                statusText.style.color = "#22D3EE";
+            } else if (state === 'speaking') {
+                orbeAgent.classList.add('speaking');
+                statusText.innerText = "Hablando...";
+                statusText.style.color = "#A855F7";
+            } else {
+                statusText.innerText = "En Línea / Esperando";
+                statusText.style.color = "#94A3B8";
+            }
+        }
+
+        function startListening() {
+            if (!isConversationActive || window.speechSynthesis.speaking || isBotTalking) return;
+            
+            try {
+                recognition.lang = langSelect.value; 
+                recognition.start();
+                changeVisualState('listening');
+            } catch (e) {
+                console.log("Re-enganchando flujo de hardware...");
+            }
+        }
+
+        function stopConversation() {
+            isConversationActive = false;
+            isBotTalking = false;
+            clearTimeout(silenceTimer);
+            accumulatedText = "";
+            activationBtn.classList.remove('active');
+            try { recognition.abort(); } catch(e) {}
+            window.speechSynthesis.cancel();
+            changeVisualState('idle');
+            realtimeText.innerText = "Sistema en pausa.";
+        }
+
+        recognition.onresult = (event) => {
+            clearTimeout(silenceTimer);
+            const resultText = event.results[0][0].transcript.trim();
+            
+            if (resultText.length > 0) {
+                accumulatedText += (accumulatedText ? " " : "") + resultText;
+                realtimeText.innerText = `"${accumulatedText}"`; // Muestra lo que hablas de forma limpia
+            }
+
+            // Temporizador inteligente contra cortes de Chrome
             silenceTimer = setTimeout(() => {
-                if (isConversationActive && !isBotTalking) {
+                if (isConversationActive && !isBotTalking && accumulatedText.trim().length > 0) {
                     executeSend();
                 }
             }, SILENCE_TIMEOUT);
-        }
-    }
-};
+        };
 
-recognition.onerror = (event) => {
-    if (event.error === 'aborted') return;
-    console.error("Notificación del micrófono:", event.error);
-    
-    if (event.error === 'no-speech' && isConversationActive) {
-        startListening();
-    }
-};
+        recognition.onend = () => {
+            if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
+                startListening();
+                
+                if (accumulatedText.trim().length > 0 && !silenceTimer) {
+                    silenceTimer = setTimeout(() => {
+                        if (isConversationActive && !isBotTalking) {
+                            executeSend();
+                        }
+                    }, SILENCE_TIMEOUT);
+                }
+            }
+        };
 
-// 2. SÍNTESIS DE VOZ NATIVA
-function speakEnglish(text) {
-    isBotTalking = true; 
-    clearTimeout(silenceTimer);
-    micBtn.classList.remove('recording');
-    
-    try { recognition.abort(); } catch(e) {}
-    window.speechSynthesis.cancel();
-    
-    const speech = new SpeechSynthesisUtterance();
-    speech.text = text;
-    speech.lang = 'en-US'; 
-    speech.volume = 1;
-    speech.rate = 0.95; 
-    speech.pitch = 1;
-    
-    const voices = window.speechSynthesis.getVoices();
-    const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
-    if (englishVoice) speech.voice = englishVoice;
+        recognition.onerror = (event) => {
+            if (event.error === 'aborted') return;
+            if (event.error === 'no-speech' && isConversationActive) {
+                startListening();
+            }
+        };
 
-    speech.onend = () => {
-        isBotTalking = false; 
-        if (isConversationActive) {
-            setTimeout(() => { startListening(); }, 400); 
-        }
-    };
+        // Síntesis de voz acoplada a las animaciones del orbe
+        function speakEnglish(text) {
+            isBotTalking = true; 
+            clearTimeout(silenceTimer);
+            changeVisualState('speaking');
+            
+            try { recognition.abort(); } catch(e) {}
+            window.speechSynthesis.cancel();
+            
+            const speech = new SpeechSynthesisUtterance();
+            speech.text = text;
+            speech.lang = 'en-US'; 
+            speech.volume = 1;
+            speech.rate = 0.95; 
+            
+            const voices = window.speechSynthesis.getVoices();
+            const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
+            if (englishVoice) speech.voice = englishVoice;
 
-    window.speechSynthesis.speak(speech);
-}
+            speech.onend = () => {
+                isBotTalking = false; 
+                if (isConversationActive) {
+                    changeVisualState('listening');
+                    setTimeout(() => { startListening(); }, 400); 
+                } else {
+                    changeVisualState('idle');
+                }
+            };
 
-window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
-
-// 3. PROCESAMIENTO Y ENVÍO REFACTORIZADO
-function executeSend() {
-    try { recognition.abort(); } catch(e) {}
-    sendMessage();
-}
-
-async function sendMessage() {
-    const text = accumulatedText.trim();
-    if (!text) return;
-
-    appendMessage(text, 'user');
-    userInput.value = '';
-    accumulatedText = ""; // Reseteamos el acumulador para el próximo turno
-    clearTimeout(silenceTimer);
-    silenceTimer = null;
-
-    chatHistory.push({ role: "user", content: text });
-
-    try {
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'api-key': API_KEY 
-            },
-            body: JSON.stringify({ 
-                model: DEPLOYMENT_NAME, 
-                messages: chatHistory,
-                store: true 
-            })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            appendMessage(`Azure Error: ${errorData.error?.message || "Error en la solicitud."}`, 'bot');
-            stopConversation();
-            return;
+            window.speechSynthesis.speak(speech);
         }
 
-        const data = await response.json();
+        window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const botReply = data.choices[0].message.content;
-            appendMessage(botReply, 'bot');
-            speakEnglish(botReply); 
-            chatHistory.push({ role: "assistant", content: botReply });
+        function executeSend() {
+            changeVisualState('thinking');
+            try { recognition.abort(); } catch(e) {}
+            sendMessage();
         }
 
-    } catch (error) {
-        console.error("Error crítico de ejecución:", error);
-        appendMessage("Connection issue. Conversation stopped.", 'bot');
-        stopConversation();
-    }
-}
+        async function sendMessage() {
+            const text = accumulatedText.trim();
+            if (!text) return;
 
-function appendMessage(text, sender) {
-    const msgDiv = document.createElement('div');
-    msgDiv.classList.add('message', sender);
-    msgDiv.innerHTML = `<div class="text">${text}</div>`;
-    chatBox.appendChild(msgDiv);
-    chatBox.scrollTop = chatBox.scrollHeight; 
-}
+            accumulatedText = ""; 
+            clearTimeout(silenceTimer);
+            silenceTimer = null;
 
-sendBtn.addEventListener('click', () => {
-    clearTimeout(silenceTimer);
-    executeSend();
-});
+            chatHistory.push({ role: "user", content: text });
 
-userInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        clearTimeout(silenceTimer);
-        executeSend();
-    }
-});    </script>
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'api-key': API_KEY 
+                    },
+                    body: JSON.stringify({ 
+                        model: DEPLOYMENT_NAME, 
+                        messages: chatHistory,
+                        store: true 
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    realtimeText.innerText = `Error: ${errorData.error?.message || "Rechazo de credenciales."}`;
+                    stopConversation();
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (data.choices && data.choices[0] && data.choices[0].message) {
+                    const botReply = data.choices[0].message.content;
+                    realtimeText.innerText = botReply; // Reemplaza la pantalla con la respuesta para soporte visual
+                    speakEnglish(botReply); 
+                    chatHistory.push({ role: "assistant", content: botReply });
+                }
+
+            } catch (error) {
+                console.error(error);
+                realtimeText.innerText = "Fallo de conexión externa.";
+                stopConversation();
+            }
+        }
+    </script>
 </body>
 </html>
