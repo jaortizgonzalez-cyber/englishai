@@ -240,6 +240,34 @@
             0% { transform: scale(1); box-shadow: 0 0 70px 20px rgba(168, 85, 247, 0.5); }
             100% { transform: scale(1.08); box-shadow: 0 0 110px 40px rgba(168, 85, 247, 0.7); }
         }
+
+        /* =========================================================================
+     * AJUSTES EXCLUSIVOS DE ILUMINACIÓN PARA EL TELEPROMPTER DE PALABRAS
+     * ========================================================================= */
+    .transcript-monitor {
+        width: 100%;
+        max-width: 480px;
+        text-align: center;
+        min-height: 100px; /* Le damos un poco más de espacio para párrafos largos */
+        padding: 15px;
+        overflow-y: auto;
+    }
+
+    #realtime-text {
+        font-size: 1.25rem; /* Un poco más grande para mejor lectura */
+        font-weight: 300;
+        line-height: 1.6;
+        color: #475569; /* Las palabras ocultas o inactivas nacen en un gris oscuro elegante */
+        text-shadow: none;
+        transition: all 0.2s ease;
+    }
+
+    /* Regla para forzar el brillo neón cuando la palabra se activa síncronamente */
+    #realtime-text span {
+        display: inline-block;
+        margin: 0 2px;
+        will-change: color, text-shadow, opacity;
+    }
     </style>
 </head>
 <body>
