@@ -328,6 +328,7 @@ const toggleKeyBtn = document.getElementById('toggle-key-btn');
 let isConversationActive = false; 
 let isBotTalking = false; 
 let silenceTimer = null; 
+let karaokeTimer = null; // Cronómetro virtual para la iluminación
 let accumulatedText = ""; 
 const SILENCE_TIMEOUT = 3000; 
 
@@ -432,6 +433,7 @@ function stopConversation() {
     isConversationActive = false;
     isBotTalking = false;
     clearTimeout(silenceTimer);
+    clearInterval(karaokeTimer);
     accumulatedText = "";
     if(activationBtn) activationBtn.classList.remove('active');
     try { recognition.abort(); } catch(e) {}
@@ -477,17 +479,18 @@ recognition.onerror = (event) => {
 };
 
 // =========================================================================
-// SÍNTESIS DE VOZ CON ILUMINACIÓN ABSOLUTA POR CARACTERES
+// SÍNTESIS DE VOZ CON CRONÓMETRO VIRTUAL (BLINDAJE ANTE BUGS DE CHROME)
 // =========================================================================
 function speakEnglish(text) {
     isBotTalking = true; 
     clearTimeout(silenceTimer);
+    clearInterval(karaokeTimer); // Limpieza preventiva
     changeVisualState('speaking');
     
     try { recognition.abort(); } catch(e) {}
     window.speechSynthesis.cancel();
     
-    // 1. Purgar Markdown y unificar todos los saltos de línea en espacios puros
+    // 1. Limpieza rigurosa del texto
     let cleanText = text
         .replace(/\*\*/g, '')  
         .replace(/\*/g, '')    
@@ -497,20 +500,10 @@ function speakEnglish(text) {
         .replace(/\s+/g, ' ')
         .trim(); 
 
-    // 2. Mapeo indexado por posición de caracter para sincronía perfecta
-    let wordSpans = [];
+    // 2. Renderizamos las palabras en su estado opaco inicial
     const wordsArray = cleanText.split(' ');
-    let currentPos = 0;
-
     realtimeText.innerHTML = wordsArray.map((word, index) => {
-        const start = currentPos;
-        const end = start + word.length;
-        currentPos = end + 1; // +1 por el espacio
-        
-        // Guardamos los metadatos de coordenadas de la palabra
-        wordSpans.push({ id: `w-${index}`, start: start, end: end });
-        
-        return `<span id="w-${index}" style="transition: all 0.15s ease; color: #475569; opacity: 0.4; display: inline-block; margin: 0 3px;">${word}</span>`;
+        return `<span id="wk-${index}" style="transition: all 0.2s ease; color: #475569; opacity: 0.4; display: inline-block; margin: 0 3px;">${word}</span>`;
     }).join(' ');
 
     const speech = new SpeechSynthesisUtterance();
@@ -523,40 +516,53 @@ function speakEnglish(text) {
     const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
     if (englishVoice) speech.voice = englishVoice;
 
-    // 3. SEGUIMIENTO POR POSICIÓN EXACTA EN EL TEXTO
-    speech.onboundary = (event) => {
-        if (event.name === 'word') {
-            const charIndex = event.charIndex;
+    // =========================================================================
+    // MOTOR DE TIEMPOS VIRTUAL (KARAOKE GARANTIZADO)
+    // =========================================================================
+    let currentWordIndex = 0;
+    
+    // Una velocidad de rate 0.95 equivale a unos 380-400 milisegundos por palabra promedio en inglés
+    const MS_PER_WORD = 390; 
 
-            // Buscamos cuál palabra contiene el caracter que se está reproduciendo
-            const activeWord = wordSpans.find(w => charIndex >= w.start && charIndex <= w.end);
-            
-            if (activeWord) {
-                // Apagamos los brillos de todas las palabras anteriores
-                wordSpans.forEach(w => {
-                    const el = document.getElementById(w.id);
-                    if (el) {
-                        if (w.id === activeWord.id) {
-                            // ENCIENDE: Estilo neón cian radiante con opacidad al máximo
-                            el.style.color = "#22D3EE";
-                            el.style.opacity = "1";
-                            el.style.textShadow = "0 0 12px #22D3EE, 0 0 4px #22D3EE";
-                            el.style.transform = "scale(1.05)";
-                        } else {
-                            // APAGA / ATENÚA: Texto ya leído que pasa a un segundo plano elegante
-                            el.style.color = "#94A3B8";
-                            el.style.opacity = "0.7";
-                            el.style.textShadow = "none";
-                            el.style.transform = "scale(1)";
-                        }
-                    }
-                });
+    // Iniciamos la animación justo al arrancar la reproducción de voz
+    speech.onstart = () => {
+        clearInterval(karaokeTimer);
+        
+        karaokeTimer = setInterval(() => {
+            if (currentWordIndex >= wordsArray.length) {
+                clearInterval(karaokeTimer);
+                return;
             }
-        }
+
+            // Apagamos la palabra anterior dejando un rastro atenuado legible
+            if (currentWordIndex > 0) {
+                const prevEl = document.getElementById(`wk-${currentWordIndex - 1}`);
+                if (prevEl) {
+                    prevEl.style.color = "#94A3B8";
+                    prevEl.style.opacity = "0.7";
+                    prevEl.style.textShadow = "none";
+                    prevEl.style.transform = "scale(1)";
+                }
+            }
+
+            // Encendemos la palabra actual con el neón cian radiante
+            const currentEl = document.getElementById(`wk-${currentWordIndex}`);
+            if (currentEl) {
+                currentEl.style.color = "#22D3EE";
+                currentEl.style.opacity = "1";
+                currentEl.style.textShadow = "0 0 12px #22D3EE, 0 0 4px #22D3EE";
+                currentEl.style.transform = "scale(1.08)";
+                currentEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            currentWordIndex++;
+        }, MS_PER_WORD);
     };
 
     speech.onend = () => {
-        // Al finalizar, dejamos todo el texto visible de manera uniforme para su repaso
+        clearInterval(karaokeTimer);
+        
+        // Al terminar, iluminamos todo el párrafo de forma homogénea para repasar
         const allSpans = realtimeText.querySelectorAll('span');
         allSpans.forEach(span => {
             span.style.color = "#E2E8F0";
