@@ -477,7 +477,7 @@ recognition.onerror = (event) => {
 };
 
 // =========================================================================
-// SÍNTESIS DE VOZ CON ILUMINACIÓN DE PALABRAS EN TIEMPO REAL (KARAOKE EFFECT)
+// SÍNTESIS DE VOZ CON ILUMINACIÓN ABSOLUTA POR CARACTERES
 // =========================================================================
 function speakEnglish(text) {
     isBotTalking = true; 
@@ -487,18 +487,30 @@ function speakEnglish(text) {
     try { recognition.abort(); } catch(e) {}
     window.speechSynthesis.cancel();
     
-    // 1. Limpieza estricta de marcas Markdown para que el motor de voz no se confunda
+    // 1. Purgar Markdown y unificar todos los saltos de línea en espacios puros
     let cleanText = text
         .replace(/\*\*/g, '')  
         .replace(/\*/g, '')    
         .replace(/#/g, '')     
         .replace(/`/g, '')     
-        .replace(/-\s+/g, ''); 
+        .replace(/-\s+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim(); 
 
-    // 2. Preparamos el contenedor visual: Dividimos el texto en palabras indexadas
-    const wordsArray = cleanText.split(/\s+/);
+    // 2. Mapeo indexado por posición de caracter para sincronía perfecta
+    let wordSpans = [];
+    const wordsArray = cleanText.split(' ');
+    let currentPos = 0;
+
     realtimeText.innerHTML = wordsArray.map((word, index) => {
-        return `<span id="word-${index}" style="transition: all 0.15s ease; color: #475569; opacity: 0.5;">${word}</span>`;
+        const start = currentPos;
+        const end = start + word.length;
+        currentPos = end + 1; // +1 por el espacio
+        
+        // Guardamos los metadatos de coordenadas de la palabra
+        wordSpans.push({ id: `w-${index}`, start: start, end: end });
+        
+        return `<span id="w-${index}" style="transition: all 0.15s ease; color: #475569; opacity: 0.4; display: inline-block; margin: 0 3px;">${word}</span>`;
     }).join(' ');
 
     const speech = new SpeechSynthesisUtterance();
@@ -511,42 +523,46 @@ function speakEnglish(text) {
     const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
     if (englishVoice) speech.voice = englishVoice;
 
-    // VARIABLE AUXILIAR: Rastrea el índice de la palabra actual
-    let wordIndex = 0;
-
-    // 3. EVENTO DE BORDES CRÍTICO: Se ejecuta de forma síncrona cada vez que la voz dice una palabra
+    // 3. SEGUIMIENTO POR POSICIÓN EXACTA EN EL TEXTO
     speech.onboundary = (event) => {
         if (event.name === 'word') {
-            // Apagamos el resaltado neón de la palabra anterior si existía, dejándola visible de forma tenue
-            if (wordIndex > 0) {
-                const prevWord = document.getElementById(`word-${wordIndex - 1}`);
-                if (prevWord) {
-                    prevWord.style.color = "#94A3B8"; // Color de lectura normal
-                    prevWord.style.opacity = "0.7";
-                    prevWord.style.textShadow = "none";
-                }
-            }
+            const charIndex = event.charIndex;
 
-            // Iluminamos con un brillo de energía cian la palabra actual que está saliendo por el parlante
-            const currentWord = document.getElementById(`word-${wordIndex}`);
-            if (currentWord) {
-                currentWord.style.color = "#22D3EE"; // Cian brillante de tu paleta neón
-                currentWord.style.opacity = "1";
-                currentWord.style.textShadow = "0 0 12px #22D3EE, 0 0 4px #22D3EE";
-                currentWord.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
+            // Buscamos cuál palabra contiene el caracter que se está reproduciendo
+            const activeWord = wordSpans.find(w => charIndex >= w.start && charIndex <= w.end);
             
-            wordIndex++;
+            if (activeWord) {
+                // Apagamos los brillos de todas las palabras anteriores
+                wordSpans.forEach(w => {
+                    const el = document.getElementById(w.id);
+                    if (el) {
+                        if (w.id === activeWord.id) {
+                            // ENCIENDE: Estilo neón cian radiante con opacidad al máximo
+                            el.style.color = "#22D3EE";
+                            el.style.opacity = "1";
+                            el.style.textShadow = "0 0 12px #22D3EE, 0 0 4px #22D3EE";
+                            el.style.transform = "scale(1.05)";
+                        } else {
+                            // APAGA / ATENÚA: Texto ya leído que pasa a un segundo plano elegante
+                            el.style.color = "#94A3B8";
+                            el.style.opacity = "0.7";
+                            el.style.textShadow = "none";
+                            el.style.transform = "scale(1)";
+                        }
+                    }
+                });
+            }
         }
     };
 
     speech.onend = () => {
-        // Al terminar, iluminamos todo el bloque completo para que el estudiante pueda repasar la frase entera
+        // Al finalizar, dejamos todo el texto visible de manera uniforme para su repaso
         const allSpans = realtimeText.querySelectorAll('span');
         allSpans.forEach(span => {
             span.style.color = "#E2E8F0";
             span.style.opacity = "1";
             span.style.textShadow = "none";
+            span.style.transform = "scale(1)";
         });
 
         isBotTalking = false; 
@@ -604,7 +620,6 @@ async function sendMessage() {
 
         if (data.choices && data.choices[0] && data.choices[0].message) {
             const botReply = data.choices[0].message.content;
-            // Pasamos la respuesta directa a la función Speak, que ahora maneja el renderizado dinámico palabra por palabra
             speakEnglish(botReply); 
             chatHistory.push({ role: "assistant", content: botReply });
         }
