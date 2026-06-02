@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI English Tutor</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-color: #4F46E5;
+            --bg-color: #F3F4F6;
+            --chat-bg: #FFFFFF;
+            --user-msg: #4F46E5;
+            --bot-msg: #E5E7EB;
+            --text-dark: #1F2937;
+            --text-light: #F9FAFB;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .chat-container {
+            width: 100%;
+            max-width: 450px;
+            height: 90vh;
+            background-color: var(--chat-bg);
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--primary-color);
+            color: var(--text-light);
+            padding: 20px;
+            text-align: center;
+        }
+
+        header h2 { font-size: 1.2rem; margin-bottom: 5px; }
+        header p { font-size: 0.85rem; opacity: 0.8; }
+
+        .chat-box {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            max-width: 80%;
+            display: flex;
+        }
+
+        .message .text {
+            padding: 12px 16px;
+            border-radius: 18px;
+            font-size: 0.95rem;
+            line-height: 1.4;
+        }
+
+        .message.user { align-self: flex-end; }
+        .message.user .text {
+            background-color: var(--user-msg);
+            color: var(--text-light);
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.bot { align-self: flex-start; }
+        .message.bot .text {
+            background-color: var(--bot-msg);
+            color: var(--text-dark);
+            border-bottom-left-radius: 4px;
+        }
+
+        .input-area {
+            padding: 15px;
+            background-color: var(--chat-bg);
+            border-top: 1px solid #E5E7EB;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        #lang-select {
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            font-size: 0.8rem;
+            outline: none;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            outline: none;
+            font-size: 0.95rem;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            color: #6B7280;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .icon-btn:hover { color: var(--primary-color); }
+        .icon-btn.primary { color: var(--primary-color); }
+
+        .recording {
+            color: #EF4444 !important;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <header>
+            <h2>ðŸ‡¬ðŸ‡§ English Tutor</h2>
+            <p>Habla en inglÃ©s o pide ayuda en espaÃ±ol</p>
+        </header>
+        
+        <div class="chat-box" id="chat-box">
+            <div class="message bot">
+                <div class="text">Hello! I'm your English tutor. What would you like to talk about today?</div>
+            </div>
+        </div>
+
+        <div class="input-area">
+            <select id="lang-select" title="Idioma de escucha">
+                <option value="en-US">Mic: English</option>
+                <option value="es-ES">Mic: EspaÃ±ol</option>
+            </select>
+            <input type="text" id="user-input" placeholder="Type or speak...">
+            <button id="mic-btn" class="icon-btn"><i class="fas fa-microphone"></i></button>
+            <button id="send-btn" class="icon-btn primary"><i class="fas fa-paper-plane"></i></button>
+        </div>
+    </div>
+
+   <script>
+    // =========================================================================
+    // CONFIGURACI¨®N DE CREDENCIALES (PROTEGIDA CON LOCALSTORAGE)
+    // =========================================================================
+    const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
+    const DEPLOYMENT_NAME = 'gpt-4.1'; 
+    const API_URL = AZURE_BASE_URL + '/chat/completions';
+
+    // Intentar recuperar la llave guardada en el navegador
+    let API_KEY = localStorage.getItem('azure_tutor_key');
+
+    // Si no existe, se la pedimos al usuario mediante una ventana emergente limpia
+    if (!API_KEY) {
+        API_KEY = prompt("Por favor, ingresa tu API Key de Azure AI Foundry para comenzar a practicar:");
+        if (API_KEY) {
+            localStorage.setItem('azure_tutor_key', API_KEY.trim());
+        } else {
+            alert("Es necesaria una API Key para que el tutor funcione. Refresca la p¨¢gina para intentar de nuevo.");
+        }
+    }
+
+    // Elementos del DOM
+    const chatBox = document.getElementById('chat-box');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    const micBtn = document.getElementById('mic-btn');
+    const langSelect = document.getElementById('lang-select');
+
+    let isConversationActive = false; 
+
+    let chatHistory = [
+        {
+            role: "system",
+            content: "You are an empathetic, friendly, and conversational English tutor. Your main goal is to help me practice my spoken English. Rules: 1. ALWAYS reply in natural and clear English. 2. If I talk or ask something in Spanish because I am stuck or don't know how to say it, kindly translate it or show me the correct way to say it in English, and then continue our conversation in English. 3. Keep your answers short, conversational, and easy to read."
+        },
+        {
+            role: "assistant",
+            content: "Hello! I am your English tutor, and I'm very excited to help you practice. Don't worry if you need to use Spanish sometimes, I will help you out. What would you like to talk about today?"
+        }
+    ];
+
+    // 1. RECONOCIMIENTO DE VOZ (Modo Continuo / Manos Libres)
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.interimResults = false;
+    recognition.continuous = false; 
+
+    micBtn.addEventListener('click', () => {
+        if (!isConversationActive) {
+            startListening();
+        } else {
+            stopConversation();
+        }
+    });
+
+    function startListening() {
+        try {
+            isConversationActive = true;
+            recognition.lang = langSelect.value; 
+            recognition.start();
+            micBtn.classList.add('recording');
+        } catch (e) {
+            console.log("Reconocimiento ya activo o en transici¨®n.");
+        }
+    }
+
+    function stopConversation() {
+        isConversationActive = false;
+        recognition.abort();
+        window.speechSynthesis.cancel();
+        micBtn.classList.remove('recording');
+    }
+
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        userInput.value = transcript;
+        sendMessage(); 
+    };
+
+    recognition.onend = () => {
+        if (isConversationActive && !window.speechSynthesis.speaking) {
+            startListening();
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.error("Error en reconocimiento de voz:", event.error);
+        if (event.error === 'no-speech' && isConversationActive) {
+            startListening();
+        } else if (event.error !== 'aborted') {
+            micBtn.classList.remove('recording');
+        }
+    };
+
+    // 2. S¨ªNTESIS DE VOZ CON REENGANCHE AUTOM¨¢TICO
+    function speakEnglish(text) {
+        recognition.abort(); 
+        window.speechSynthesis.cancel();
+        
+        const speech = new SpeechSynthesisUtterance();
+        speech.text = text;
+        speech.lang = 'en-US';
+        speech.volume = 1;
+        speech.rate = 0.95;
+        speech.pitch = 1;
+        
+        const voices = window.speechSynthesis.getVoices();
+        const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
+        if (englishVoice) speech.voice = englishVoice;
+
+        speech.onend = () => {
+            if (isConversationActive) {
+                setTimeout(() => { 
+                    if (!window.speechSynthesis.speaking) {
+                        startListening(); 
+                    }
+                }, 500);
+            }
+        };
+
+        window.speechSynthesis.speak(speech);
+    }
+
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+
+    // 3. ENV¨ªO DE MENSAJES A AZURE FOUNDRY
+    async function sendMessage() {
+        const text = userInput.value.trim();
+        if (!text) return;
+
+        // Validar si la clave fue ingresada
+        if (!API_KEY) {
+            appendMessage("Error: No se ha configurado una API Key v¨¢lida.", 'bot');
+            return;
+        }
+
+        appendMessage(text, 'user');
+        userInput.value = '';
+
+        chatHistory.push({ role: "user", content: text });
+
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'api-key': API_KEY
+                },
+                body: JSON.stringify({ 
+                    model: DEPLOYMENT_NAME, 
+                    messages: chatHistory,
+                    store: true
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error("Detalle del rechazo de Azure:", errorData);
+                const innerMessage = errorData.error?.message || "Estructura JSON rechazada.";
+                appendMessage(`Azure Error: ${innerMessage}`, 'bot');
+                
+                // Si la clave es inv¨¢lida, limpiamos el almacenamiento para pedir una nueva
+                if (response.status === 401 || response.status === 403) {
+                    localStorage.removeItem('azure_tutor_key');
+                    API_KEY = null;
+                    appendMessage("Tu API Key parece ser incorrecta. Recarga la p¨¢gina para ingresarla de nuevo.", 'bot');
+                }
+                stopConversation();
+                return;
+            }
+
+            const data = await response.json();
+
+            if (data.choices && data.choices[0] && data.choices[0].message) {
+                const botReply = data.choices[0].message.content;
+                appendMessage(botReply, 'bot');
+                speakEnglish(botReply);
+                chatHistory.push({ role: "assistant", content: botReply });
+            }
+
+        } catch (error) {
+            console.error("Error cr¨ªtico de ejecuci¨®n:", error);
+            appendMessage("Connection issue. Conversation stopped.", 'bot');
+            stopConversation();
+        }
+    }
+
+    function appendMessage(text, sender) {
+        const msgDiv = document.createElement('div');
+        msgDiv.classList.add('message', sender);
+        msgDiv.innerHTML = `<div class="text">${text}</div>`;
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    sendBtn.addEventListener('click', () => {
+        sendMessage();
+        if (isConversationActive) recognition.abort(); 
+    });
+    
+    userInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            sendMessage();
+            if (isConversationActive) recognition.abort();
+        }
+    });
+</script>
+</body>
+</html>
