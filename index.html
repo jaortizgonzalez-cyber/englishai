@@ -328,7 +328,7 @@ const toggleKeyBtn = document.getElementById('toggle-key-btn');
 let isConversationActive = false; 
 let isBotTalking = false; 
 let silenceTimer = null; 
-let karaokeTimer = null; // Cronómetro virtual para la iluminación
+let karaokeTimer = null; 
 let accumulatedText = ""; 
 const SILENCE_TIMEOUT = 3000; 
 
@@ -389,6 +389,21 @@ if(activationBtn) {
             isConversationActive = true;
             activationBtn.classList.add('active');
             accumulatedText = "";
+            
+            // =========================================================================
+            // TRUCO MÓVIL CRÍTICO: Disparar audio mudo en el clic físico para abrir canales
+            // =========================================================================
+            try {
+                window.speechSynthesis.cancel();
+                const unlockSpeech = new SpeechSynthesisUtterance(' ');
+                unlockSpeech.volume = 0; // Silencio absoluto
+                unlockSpeech.rate = 1;
+                window.speechSynthesis.speak(unlockSpeech);
+                console.log("Canal de audio móvil desbloqueado con éxito.");
+            } catch(e) {
+                console.error("No se pudo pre-activar el motor de voz:", e);
+            }
+
             startListening();
         } else {
             stopConversation();
@@ -478,19 +493,16 @@ recognition.onerror = (event) => {
     }
 };
 
-// =========================================================================
-// SÍNTESIS DE VOZ CON CRONÓMETRO VIRTUAL (BLINDAJE ANTE BUGS DE CHROME)
-// =========================================================================
+// Síntesis de voz acoplada al simulador virtual de tiempos
 function speakEnglish(text) {
     isBotTalking = true; 
     clearTimeout(silenceTimer);
-    clearInterval(karaokeTimer); // Limpieza preventiva
+    clearInterval(karaokeTimer); 
     changeVisualState('speaking');
     
     try { recognition.abort(); } catch(e) {}
     window.speechSynthesis.cancel();
     
-    // 1. Limpieza rigurosa del texto
     let cleanText = text
         .replace(/\*\*/g, '')  
         .replace(/\*/g, '')    
@@ -500,7 +512,6 @@ function speakEnglish(text) {
         .replace(/\s+/g, ' ')
         .trim(); 
 
-    // 2. Renderizamos las palabras en su estado opaco inicial
     const wordsArray = cleanText.split(' ');
     realtimeText.innerHTML = wordsArray.map((word, index) => {
         return `<span id="wk-${index}" style="transition: all 0.2s ease; color: #475569; opacity: 0.4; display: inline-block; margin: 0 3px;">${word}</span>`;
@@ -513,28 +524,21 @@ function speakEnglish(text) {
     speech.rate = 0.95; 
     
     const voices = window.speechSynthesis.getVoices();
+    // En móviles preferimos las voces nativas del sistema operativo (iOS/Android) para optimizar recursos
     const englishVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
     if (englishVoice) speech.voice = englishVoice;
 
-    // =========================================================================
-    // MOTOR DE TIEMPOS VIRTUAL (KARAOKE GARANTIZADO)
-    // =========================================================================
     let currentWordIndex = 0;
-    
-    // Una velocidad de rate 0.95 equivale a unos 380-400 milisegundos por palabra promedio en inglés
     const MS_PER_WORD = 390; 
 
-    // Iniciamos la animación justo al arrancar la reproducción de voz
     speech.onstart = () => {
         clearInterval(karaokeTimer);
-        
         karaokeTimer = setInterval(() => {
             if (currentWordIndex >= wordsArray.length) {
                 clearInterval(karaokeTimer);
                 return;
             }
 
-            // Apagamos la palabra anterior dejando un rastro atenuado legible
             if (currentWordIndex > 0) {
                 const prevEl = document.getElementById(`wk-${currentWordIndex - 1}`);
                 if (prevEl) {
@@ -545,7 +549,6 @@ function speakEnglish(text) {
                 }
             }
 
-            // Encendemos la palabra actual con el neón cian radiante
             const currentEl = document.getElementById(`wk-${currentWordIndex}`);
             if (currentEl) {
                 currentEl.style.color = "#22D3EE";
@@ -561,8 +564,6 @@ function speakEnglish(text) {
 
     speech.onend = () => {
         clearInterval(karaokeTimer);
-        
-        // Al terminar, iluminamos todo el párrafo de forma homogénea para repasar
         const allSpans = realtimeText.querySelectorAll('span');
         allSpans.forEach(span => {
             span.style.color = "#E2E8F0";
