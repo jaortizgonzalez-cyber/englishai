@@ -128,18 +128,24 @@
             width: 100%;
             max-width: 480px;
             text-align: center;
-            min-height: 60px;
-            padding: 10px;
+            min-height: 100px;
+            padding: 15px;
+            overflow-y: auto;
         }
 
         #realtime-text {
-            font-size: 1.1rem;
+            font-size: 1.25rem;
             font-weight: 300;
-            line-height: 1.5;
-            color: #CBD5E1;
-            font-style: italic;
-            opacity: 0.85;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            line-height: 1.6;
+            color: #475569;
+            text-shadow: none;
+            transition: all 0.2s ease;
+        }
+
+        #realtime-text span {
+            display: inline-block;
+            margin: 0 3px;
+            will-change: color, text-shadow, opacity;
         }
 
         .control-bar {
@@ -240,34 +246,6 @@
             0% { transform: scale(1); box-shadow: 0 0 70px 20px rgba(168, 85, 247, 0.5); }
             100% { transform: scale(1.08); box-shadow: 0 0 110px 40px rgba(168, 85, 247, 0.7); }
         }
-
-        /* =========================================================================
-     * AJUSTES EXCLUSIVOS DE ILUMINACIÓN PARA EL TELEPROMPTER DE PALABRAS
-     * ========================================================================= */
-    .transcript-monitor {
-        width: 100%;
-        max-width: 480px;
-        text-align: center;
-        min-height: 100px; /* Le damos un poco más de espacio para párrafos largos */
-        padding: 15px;
-        overflow-y: auto;
-    }
-
-    #realtime-text {
-        font-size: 1.25rem; /* Un poco más grande para mejor lectura */
-        font-weight: 300;
-        line-height: 1.6;
-        color: #475569; /* Las palabras ocultas o inactivas nacen en un gris oscuro elegante */
-        text-shadow: none;
-        transition: all 0.2s ease;
-    }
-
-    /* Regla para forzar el brillo neón cuando la palabra se activa síncronamente */
-    #realtime-text span {
-        display: inline-block;
-        margin: 0 2px;
-        will-change: color, text-shadow, opacity;
-    }
     </style>
 </head>
 <body>
@@ -306,342 +284,341 @@
     </div>
 
     <script>
-        // =========================================================================
-// CONFIGURACIÓN DE ENDPOINTS (Azure AI Foundry)
-// =========================================================================
-const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
-const DEPLOYMENT_NAME = 'gpt-4.1'; 
-const API_URL = AZURE_BASE_URL + '/chat/completions';
-
-// Elementos del DOM mapeados de forma segura
-const orbeAgent = document.getElementById('orbe-agent');
-const statusText = document.getElementById('status-text');
-const realtimeText = document.getElementById('realtime-text');
-const activationBtn = document.getElementById('activation-btn');
-const langSelect = document.getElementById('lang-select');
-
-const keyPanel = document.getElementById('key-panel');
-const keyInput = document.getElementById('key-input');
-const saveKeyBtn = document.getElementById('save-key-btn');
-const toggleKeyBtn = document.getElementById('toggle-key-btn');
-
-let isConversationActive = false; 
-let isBotTalking = false; 
-let silenceTimer = null; 
-let karaokeTimer = null; 
-let accumulatedText = ""; 
-const SILENCE_TIMEOUT = 3000; 
-
-// Carga inteligente de API Key corporativa
-let API_KEY = localStorage.getItem('azure_tutor_key');
-if (API_KEY) {
-    keyInput.value = API_KEY;
-    if(realtimeText) realtimeText.innerText = "Sincronizado de forma segura. Presiona el micrófono.";
-} else {
-    if(keyPanel) keyPanel.classList.add('active');
-}
-
-if(toggleKeyBtn) {
-    toggleKeyBtn.addEventListener('click', () => keyPanel.classList.toggle('active'));
-}
-
-if(saveKeyBtn) {
-    saveKeyBtn.addEventListener('click', () => {
-        const val = keyInput.value.trim();
-        if (val) {
-            API_KEY = val;
-            localStorage.setItem('azure_tutor_key', API_KEY);
-            keyPanel.classList.remove('active');
-            realtimeText.innerText = "🔑 Conexión establecida. Listo para operar.";
-        } else {
-            localStorage.removeItem('azure_tutor_key');
-            API_KEY = null;
-            realtimeText.innerText = "API Key eliminada.";
-        }
-    });
-}
-
-let chatHistory = [
-    {
-        role: "system",
-        content: "You are an empathetic, friendly, and conversational English tutor. Your main goal is to help me practice my spoken English. Rules: 1. ALWAYS reply in natural and clear English. 2. If I talk or ask something in Spanish because I am stuck or don't know how to say it, kindly translate it or show me the correct way to say it in English, and then continue our conversation in English. 3. Keep your answers short, conversational, and easy to read. 4. CRITICAL: Try to avoid complex markdown formatting like excessive bold asterisks or special code blocks in your answers, keep it like regular spoken dialogue."
-    },
-    {
-        role: "assistant",
-        content: "Hello! I am your English tutor, and I'm very excited to help you practice. Don't worry if you need to use Spanish sometimes, I will help you out. What would you like to talk about today?"
-    }
-];
-
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const recognition = new SpeechRecognition();
-recognition.interimResults = false; 
-recognition.continuous = false;    
-
-if(activationBtn) {
-    activationBtn.addEventListener('click', () => {
-        if (!API_KEY) {
-            keyPanel.classList.add('active');
-            alert("Ingresa y guarda tu API Key para poder activar al agente.");
-            return;
-        }
-
-        if (!isConversationActive) {
-            isConversationActive = true;
-            activationBtn.classList.add('active');
-            accumulatedText = "";
+        // Envolvemos la inicialización para garantizar que los elementos de UI existan al 100%
+        window.onload = function() {
             
-            // 1. DESBLOQUEO DE HARDWARE MULTIMEDIA MÓVIL
-            try {
-                window.speechSynthesis.cancel();
-                const unlockSpeech = new SpeechSynthesisUtterance('Starting Multivac');
-                unlockSpeech.volume = 0.01; // Audio mínimo audible para forzar al celular a abrir la bocina físicamente
-                unlockSpeech.rate = 1;
-                unlockSpeech.lang = 'en-US';
-                window.speechSynthesis.speak(unlockSpeech);
-                console.log("Canal de audio móvil inicializado.");
-            } catch(e) {
-                console.error("Fallo de pre-activación:", e);
+            const AZURE_BASE_URL = 'https://loki1-resource.services.ai.azure.com/openai/v1'; 
+            const DEPLOYMENT_NAME = 'gpt-4.1'; 
+            const API_URL = AZURE_BASE_URL + '/chat/completions';
+
+            const orbeAgent = document.getElementById('orbe-agent');
+            const statusText = document.getElementById('status-text');
+            const realtimeText = document.getElementById('realtime-text');
+            const activationBtn = document.getElementById('activation-btn');
+            const langSelect = document.getElementById('lang-select');
+            
+            const keyPanel = document.getElementById('key-panel');
+            const keyInput = document.getElementById('key-input');
+            const saveKeyBtn = document.getElementById('save-key-btn');
+            const toggleKeyBtn = document.getElementById('toggle-key-btn');
+
+            let isConversationActive = false; 
+            let isBotTalking = false; 
+            let silenceTimer = null; 
+            let karaokeTimer = null; 
+            let accumulatedText = ""; 
+            const SILENCE_TIMEOUT = 3000; 
+
+            // Carga inteligente de API Key corporativa
+            let API_KEY = localStorage.getItem('azure_tutor_key');
+            if (API_KEY) {
+                keyInput.value = API_KEY;
+                if(realtimeText) realtimeText.innerText = "Sincronizado de forma segura. Presiona el micrófono.";
+            } else {
+                if(keyPanel) keyPanel.classList.add('active');
             }
 
-            // 2. TOLERANCIA ASÍNCRONA: Esperamos 300ms a que la bocina abra antes de encender el micrófono
-            setTimeout(() => {
-                if (isConversationActive) startListening();
-            }, 300);
+            if(toggleKeyBtn) {
+                toggleKeyBtn.addEventListener('click', () => keyPanel.classList.toggle('active'));
+            }
 
-        } else {
-            stopConversation();
-        }
-    });
-}
+            if(saveKeyBtn) {
+                saveKeyBtn.addEventListener('click', () => {
+                    const val = keyInput.value.trim();
+                    if (val) {
+                        API_KEY = val;
+                        localStorage.setItem('azure_tutor_key', API_KEY);
+                        keyPanel.classList.remove('active');
+                        realtimeText.innerText = "🔑 Conexión establecida. Listo para operar.";
+                    } else {
+                        localStorage.removeItem('azure_tutor_key');
+                        API_KEY = null;
+                        realtimeText.innerText = "API Key eliminada.";
+                    }
+                });
+            }
 
-function changeVisualState(state) {
-    if (!orbeAgent || !statusText) return;
-    orbeAgent.classList.remove('listening', 'thinking', 'speaking');
-    
-    if (state === 'listening') {
-        orbeAgent.classList.add('listening');
-        statusText.innerText = "Escuchando...";
-        statusText.style.color = "#EC4899";
-    } else if (state === 'thinking') {
-        orbeAgent.classList.add('thinking');
-        statusText.innerText = "Procesando...";
-        statusText.style.color = "#22D3EE";
-    } else if (state === 'speaking') {
-        orbeAgent.classList.add('speaking');
-        statusText.innerText = "Hablando...";
-        statusText.style.color = "#A855F7";
-    } else {
-        statusText.innerText = "En Línea / Esperando";
-        statusText.style.color = "#94A3B8";
-    }
-}
-
-function startListening() {
-    if (!isConversationActive || window.speechSynthesis.speaking || isBotTalking) return;
-    try {
-        recognition.lang = langSelect.value; 
-        recognition.start();
-        changeVisualState('listening');
-    } catch (e) {
-        console.log("Micrófono reconfigurando buffers de audio...");
-    }
-}
-
-function stopConversation() {
-    isConversationActive = false;
-    isBotTalking = false;
-    clearTimeout(silenceTimer);
-    clearInterval(karaokeTimer);
-    accumulatedText = "";
-    if(activationBtn) activationBtn.classList.remove('active');
-    try { recognition.abort(); } catch(e) {}
-    window.speechSynthesis.cancel();
-    changeVisualState('idle');
-    if(realtimeText) realtimeText.innerText = "Sistema en pausa.";
-}
-
-recognition.onresult = (event) => {
-    clearTimeout(silenceTimer);
-    const resultText = event.results[0][0].transcript.trim();
-    
-    if (resultText.length > 0) {
-        accumulatedText += (accumulatedText ? " " : "") + resultText;
-        if(realtimeText) realtimeText.innerText = `"${accumulatedText}"`; 
-    }
-
-    silenceTimer = setTimeout(() => {
-        if (isConversationActive && !isBotTalking && accumulatedText.trim().length > 0) {
-            executeSend();
-        }
-    }, SILENCE_TIMEOUT);
-};
-
-recognition.onend = () => {
-    // Tolerancia de reenganche móvil: Espera 200ms tras cerrarse para volver a iniciar limpiamente
-    if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
-        setTimeout(() => { startListening(); }, 200);
-        
-        if (accumulatedText.trim().length > 0 && !silenceTimer) {
-            silenceTimer = setTimeout(() => {
-                if (isConversationActive && !isBotTalking) {
-                    executeSend();
+            let chatHistory = [
+                {
+                    role: "system",
+                    content: "You are an empathetic, friendly, and conversational English tutor. Your main goal is to help me practice my spoken English. Rules: 1. ALWAYS reply in natural and clear English. 2. If I talk or ask something in Spanish because I am stuck or don't know how to say it, kindly translate it or show me the correct way to say it in English, and then continue our conversation in English. 3. Keep your answers short, conversational, and easy to read. 4. CRITICAL: Try to avoid complex markdown formatting like excessive bold asterisks or special code blocks in your answers, keep it like regular spoken dialogue."
+                },
+                {
+                    role: "assistant",
+                    content: "Hello! I am your English tutor, and I'm very excited to help you practice. Don't worry if you need to use Spanish sometimes, I will help you out. What would you like to talk about today?"
                 }
-            }, SILENCE_TIMEOUT);
-        }
-    }
-};
+            ];
 
-recognition.onerror = (event) => {
-    if (event.error === 'aborted') return;
-    console.log("Error controlado de micro en móvil:", event.error);
-    if (event.error === 'no-speech' && isConversationActive) {
-        setTimeout(() => { startListening(); }, 200);
-    }
-};
+            // CORRECCIÓN CLAVE: Uso estricto del objeto SpeechRecognition nativo
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            recognition.interimResults = false; 
+            recognition.continuous = false;    
 
-function speakEnglish(text) {
-    isBotTalking = true; 
-    clearTimeout(silenceTimer);
-    clearInterval(karaokeTimer); 
-    changeVisualState('speaking');
-    
-    try { recognition.abort(); } catch(e) {}
-    window.speechSynthesis.cancel();
-    
-    let cleanText = text
-        .replace(/\*\*/g, '')  
-        .replace(/\*/g, '')    
-        .replace(/#/g, '')     
-        .replace(/`/g, '')     
-        .replace(/-\s+/g, '')
-        .replace(/\s+/g, ' ')
-        .trim(); 
+            if(activationBtn) {
+                activationBtn.addEventListener('click', () => {
+                    if (!API_KEY) {
+                        keyPanel.classList.add('active');
+                        alert("Ingresa y guarda tu API Key para poder activar al agente.");
+                        return;
+                    }
 
-    const wordsArray = cleanText.split(' ');
-    realtimeText.innerHTML = wordsArray.map((word, index) => {
-        return `<span id="wk-${index}" style="transition: all 0.2s ease; color: #475569; opacity: 0.4; display: inline-block; margin: 0 3px;">${word}</span>`;
-    }).join(' ');
+                    if (!isConversationActive) {
+                        isConversationActive = true;
+                        activationBtn.classList.add('active');
+                        accumulatedText = "";
+                        
+                        // Desbloqueo forzado de hardware multimedia para iOS / Android
+                        try {
+                            window.speechSynthesis.cancel();
+                            const unlockSpeech = new SpeechSynthesisUtterance('Starting Multivac');
+                            unlockSpeech.volume = 0.01; 
+                            unlockSpeech.rate = 1;
+                            unlockSpeech.lang = 'en-US';
+                            window.speechSynthesis.speak(unlockSpeech);
+                            console.log("Canal multimedia inicializado correctamente.");
+                        } catch(e) {
+                            console.error("Fallo preventivo de pre-activación:", e);
+                        }
 
-    const speech = new SpeechSynthesisUtterance();
-    speech.text = cleanText; 
-    speech.lang = 'en-US'; 
-    speech.volume = 1;
-    speech.rate = 0.95; 
-    
-    const voices = window.speechSynthesis.getVoices();
-    // Prioridad a motores nativos de iOS/Android
-    const englishVoice = voices.find(v => v.lang === 'en-US' && !v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
-    if (englishVoice) speech.voice = englishVoice;
+                        // Margen de tolerancia asíncrona de 300ms para móviles
+                        setTimeout(() => {
+                            if (isConversationActive) startListening();
+                        }, 300);
 
-    let currentWordIndex = 0;
-    const MS_PER_WORD = 390; 
+                    } else {
+                        stopConversation();
+                    }
+                });
+            }
 
-    speech.onstart = () => {
-        clearInterval(karaokeTimer);
-        karaokeTimer = setInterval(() => {
-            if (currentWordIndex >= wordsArray.length) {
+            function changeVisualState(state) {
+                if (!orbeAgent || !statusText) return;
+                orbeAgent.classList.remove('listening', 'thinking', 'speaking');
+                
+                if (state === 'listening') {
+                    orbeAgent.classList.add('listening');
+                    statusText.innerText = "Escuchando...";
+                    statusText.style.color = "#EC4899";
+                } else if (state === 'thinking') {
+                    orbeAgent.classList.add('thinking');
+                    statusText.innerText = "Procesando...";
+                    statusText.style.color = "#22D3EE";
+                } else if (state === 'speaking') {
+                    orbeAgent.classList.add('speaking');
+                    statusText.innerText = "Hablando...";
+                    statusText.style.color = "#A855F7";
+                } else {
+                    statusText.innerText = "En Línea / Esperando";
+                    statusText.style.color = "#94A3B8";
+                }
+            }
+
+            function startListening() {
+                if (!isConversationActive || window.speechSynthesis.speaking || isBotTalking) return;
+                try {
+                    recognition.lang = langSelect.value; 
+                    recognition.start();
+                    changeVisualState('listening');
+                } catch (e) {
+                    console.log("Re-enganchando buffers del micrófono...");
+                }
+            }
+
+            function stopConversation() {
+                isConversationActive = false;
+                isBotTalking = false;
+                clearTimeout(silenceTimer);
                 clearInterval(karaokeTimer);
-                return;
+                accumulatedText = "";
+                if(activationBtn) activationBtn.classList.remove('active');
+                try { recognition.abort(); } catch(e) {}
+                window.speechSynthesis.cancel();
+                changeVisualState('idle');
+                if(realtimeText) realtimeText.innerText = "Sistema en pausa.";
             }
 
-            if (currentWordIndex > 0) {
-                const prevEl = document.getElementById(`wk-${currentWordIndex - 1}`);
-                if (prevEl) {
-                    prevEl.style.color = "#94A3B8";
-                    prevEl.style.opacity = "0.7";
-                    prevEl.style.textShadow = "none";
-                    prevEl.style.transform = "scale(1)";
+            recognition.onresult = (event) => {
+                clearTimeout(silenceTimer);
+                const resultText = event.results[0][0].transcript.trim();
+                
+                if (resultText.length > 0) {
+                    accumulatedText += (accumulatedText ? " " : "") + resultText;
+                    if(realtimeText) realtimeText.innerText = `"${accumulatedText}"`; 
+                }
+
+                silenceTimer = setTimeout(() => {
+                    if (isConversationActive && !isBotTalking && accumulatedText.trim().length > 0) {
+                        executeSend();
+                    }
+                }, SILENCE_TIMEOUT);
+            };
+
+            recognition.onend = () => {
+                if (isConversationActive && !window.speechSynthesis.speaking && !isBotTalking) {
+                    setTimeout(() => { startListening(); }, 200);
+                    
+                    if (accumulatedText.trim().length > 0 && !silenceTimer) {
+                        silenceTimer = setTimeout(() => {
+                            if (isConversationActive && !isBotTalking) {
+                                executeSend();
+                            }
+                        }, SILENCE_TIMEOUT);
+                    }
+                }
+            };
+
+            recognition.onerror = (event) => {
+                if (event.error === 'aborted') return;
+                if (event.error === 'no-speech' && isConversationActive) {
+                    setTimeout(() => { startListening(); }, 200);
+                }
+            };
+
+            // Síntesis de voz con simulación virtual de teleprompter por software
+            function speakEnglish(text) {
+                isBotTalking = true; 
+                clearTimeout(silenceTimer);
+                clearInterval(karaokeTimer); 
+                changeVisualState('speaking');
+                
+                try { recognition.abort(); } catch(e) {}
+                window.speechSynthesis.cancel();
+                
+                let cleanText = text
+                    .replace(/\*\*/g, '')  
+                    .replace(/\*/g, '')    
+                    .replace(/#/g, '')     
+                    .replace(/`/g, '')     
+                    .replace(/-\s+/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim(); 
+
+                const wordsArray = cleanText.split(' ');
+                realtimeText.innerHTML = wordsArray.map((word, index) => {
+                    return `<span id="wk-${index}" style="transition: all 0.2s ease; color: #475569; opacity: 0.4; display: inline-block; margin: 0 3px;">${word}</span>`;
+                }).join(' ');
+
+                const speech = new SpeechSynthesisUtterance();
+                speech.text = cleanText; 
+                speech.lang = 'en-US'; 
+                speech.volume = 1;
+                speech.rate = 0.95; 
+                
+                const voices = window.speechSynthesis.getVoices();
+                const englishVoice = voices.find(v => v.lang === 'en-US' && !v.name.includes('Google')) || voices.find(v => v.lang === 'en-US');
+                if (englishVoice) speech.voice = englishVoice;
+
+                let currentWordIndex = 0;
+                const MS_PER_WORD = 390; 
+
+                speech.onstart = () => {
+                    clearInterval(karaokeTimer);
+                    karaokeTimer = setInterval(() => {
+                        if (currentWordIndex >= wordsArray.length) {
+                            clearInterval(karaokeTimer);
+                            return;
+                        }
+
+                        if (currentWordIndex > 0) {
+                            const prevEl = document.getElementById(`wk-${currentWordIndex - 1}`);
+                            if (prevEl) {
+                                prevEl.style.color = "#94A3B8";
+                                prevEl.style.opacity = "0.7";
+                                prevEl.style.textShadow = "none";
+                                prevEl.style.transform = "scale(1)";
+                            }
+                        }
+
+                        const currentEl = document.getElementById(`wk-${currentWordIndex}`);
+                        if (currentEl) {
+                            currentEl.style.color = "#22D3EE";
+                            currentEl.style.opacity = "1";
+                            currentEl.style.textShadow = "0 0 12px #22D3EE, 0 0 4px #22D3EE";
+                            currentEl.style.transform = "scale(1.08)";
+                            currentEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        }
+
+                        currentWordIndex++;
+                    }, MS_PER_WORD);
+                };
+
+                speech.onend = () => {
+                    clearInterval(karaokeTimer);
+                    const allSpans = realtimeText.querySelectorAll('span');
+                    allSpans.forEach(span => {
+                        span.style.color = "#E2E8F0";
+                        span.style.opacity = "1";
+                        span.style.textShadow = "none";
+                        span.style.transform = "scale(1)";
+                    });
+
+                    isBotTalking = false; 
+                    if (isConversationActive) {
+                        changeVisualState('listening');
+                        setTimeout(() => { startListening(); }, 500); 
+                    } else {
+                        changeVisualState('idle');
+                    }
+                };
+
+                window.speechSynthesis.speak(speech);
+            }
+
+            window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+
+            function executeSend() {
+                changeVisualState('thinking');
+                try { recognition.abort(); } catch(e) {}
+                sendMessage();
+            }
+
+            async function sendMessage() {
+                const text = accumulatedText.trim();
+                if (!text) return;
+
+                accumulatedText = ""; 
+                clearTimeout(silenceTimer);
+                silenceTimer = null;
+
+                chatHistory.push({ role: "user", content: text });
+
+                try {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'api-key': API_KEY 
+                        },
+                        body: JSON.stringify({ 
+                            model: DEPLOYMENT_NAME, 
+                            messages: chatHistory,
+                            store: true 
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        if(realtimeText) realtimeText.innerText = `Error: ${errorData.error?.message || "Rechazo corporativo."}`;
+                        stopConversation();
+                        return;
+                    }
+
+                    const data = await response.json();
+
+                    if (data.choices && data.choices[0] && data.choices[0].message) {
+                        const botReply = data.choices[0].message.content;
+                        speakEnglish(botReply); 
+                        chatHistory.push({ role: "assistant", content: botReply });
+                    }
+
+                } catch (error) {
+                    console.error(error);
+                    if(realtimeText) realtimeText.innerText = "Fallo crítico de conexión externa.";
+                    stopConversation();
                 }
             }
-
-            const currentEl = document.getElementById(`wk-${currentWordIndex}`);
-            if (currentEl) {
-                currentEl.style.color = "#22D3EE";
-                currentEl.style.opacity = "1";
-                currentEl.style.textShadow = "0 0 12px #22D3EE, 0 0 4px #22D3EE";
-                currentEl.style.transform = "scale(1.08)";
-                currentEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-
-            currentWordIndex++;
-        }, MS_PER_WORD);
-    };
-
-    speech.onend = () => {
-        clearInterval(karaokeTimer);
-        const allSpans = realtimeText.querySelectorAll('span');
-        allSpans.forEach(span => {
-            span.style.color = "#E2E8F0";
-            span.style.opacity = "1";
-            span.style.textShadow = "none";
-            span.style.transform = "scale(1)";
-        });
-
-        isBotTalking = false; 
-        if (isConversationActive) {
-            changeVisualState('listening');
-            // Retraso seguro para móviles antes de reabrir micrófono tras hablar
-            setTimeout(() => { startListening(); }, 500); 
-        } else {
-            changeVisualState('idle');
-        }
-    };
-
-    window.speechSynthesis.speak(speech);
-}
-
-window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
-
-function executeSend() {
-    changeVisualState('thinking');
-    try { recognition.abort(); } catch(e) {}
-    sendMessage();
-}
-
-async function sendMessage() {
-    const text = accumulatedText.trim();
-    if (!text) return;
-
-    accumulatedText = ""; 
-    clearTimeout(silenceTimer);
-    silenceTimer = null;
-
-    chatHistory.push({ role: "user", content: text });
-
-    try {
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'api-key': API_KEY 
-            },
-            body: JSON.stringify({ 
-                model: DEPLOYMENT_NAME, 
-                messages: chatHistory,
-                store: true 
-            })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            if(realtimeText) realtimeText.innerText = `Error: ${errorData.error?.message || "Rechazo corporativo."}`;
-            stopConversation();
-            return;
-        }
-
-        const data = await response.json();
-
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const botReply = data.choices[0].message.content;
-            speakEnglish(botReply); 
-            chatHistory.push({ role: "assistant", content: botReply });
-        }
-
-    } catch (error) {
-        console.error(error);
-        if(realtimeText) realtimeText.innerText = "Fallo crítico de conexión externa.";
-        stopConversation();
-    }
-}    </script>
+        };
+    </script>
 </body>
 </html>
